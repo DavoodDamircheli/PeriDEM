@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH --job-name=holw_sphere        # Job name
+#SBATCH --account=hpc_perigrain4 # Account name
+#SBATCH --partition=workq        # Partition (queue) name
+#SBATCH --nodes=50                # Number of nodes Max 86
+#SBATCH --ntasks-per-node=20     # Number of tasks per node (ppn equivalent) max 20
+#SBATCH --time=20:00:00          # Walltime
+#SBATCH --output=hollow_sphere.%j.out   # Standard output and error log
+#SBATCH --error=hollow_sphere.%j.err    # Error file if output and error are not combined
+
+# Load the required module
+module purge
+#module load mpich/3.3.2/intel-19.0.5
+module load mpich/4.1.2/intel-2021.5.0
+# Change to the directory where the job was submitted from
+cd $SLURM_SUBMIT_DIR
+
+# Define the path to the run script
+#PATH_RUN=/home/davdam/perihpcExamples/3d-test-code-oct-16/run.sh
+PATH_RUN=/home/davdam/perihpcExamples/force-trace/3d-ordinary-shapes/run.sh
+# Run the script
+
+bash $PATH_RUN
+
+
+
+
+

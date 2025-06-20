@@ -1,0 +1,16 @@
+Class: Contact (template)
+Top-level function: void print
+Top-level function: void apply_config
+Top-level function: void set_lrtb (template)
+Top-level function: void print
+Top-level function: void update_boundary
+Top-level function: void apply_config
+Top-level function: void wall_side_force_update (template)
+Top-level function: void simple_update_contact_force (template)
+Top-level function: void update_contact_force_by_boundary (template)
+Top-level function: void update_wall_contact_force (template)
+Top-level function: void apply_force_field (template)
+Top-level function: void update_wall_contact_force_by_boundary (template)
+Top-level function: bool intersects_box
+Top-level function: bool intersects_box_fext (template)
+Top-level function: bool within_interior_fext (template)
