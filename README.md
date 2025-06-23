@@ -91,7 +91,7 @@ The input mesh files and processed outputs are available at:
 
 This project was developed collaboratively. Contributions are as follows:
 
-- **Robert P. Lipton** –  conceptualization, initiated the project, modeling 
+- **Robert P. Lipton** –  conceptualization, initiated the project, modeling the project 
 - **Debdeep Bhattacharya** – developer, developed the original 2D simulation code, and designed the architecture for the 3D extension.
 - **Davood Damircheli** – developer, extended and optimized the 3D implementation, developed the HPC-compatible container environment, designed and executed large-scale simulations on supercomputing clusters.
 
