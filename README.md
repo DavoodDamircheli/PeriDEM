@@ -1,5 +1,4 @@
 # PeriDEM
-<<<<<<< HEAD
 Peridynamics-based framework for simulating crushing and fracture in granular materials
 =======
 
@@ -116,4 +115,3 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
   year={2025}
 }
 ```
->>>>>>> f93b732 (Initial public release of PeriDEM)
