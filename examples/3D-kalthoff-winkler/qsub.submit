@@ -1,0 +1,52 @@
+#!/bin/bash
+#PBS -q workq 
+# ------------project allocation code
+#PBS -A hpc_perigrain3
+# ------ number of nodes and number of processors on each node
+#PBS -l nodes=4:ppn=20
+#PBS -l walltime=20:00:00 
+# Send stdout to a named file: move to external command line
+#
+# Merge stderr messages with stdout
+#PBS -j oe 
+#
+# Give the job a name for easier tracking
+#PBS -N kalthoff3D-2
+#
+# Shell commands may begin here
+#source activate perinv
+#export PROJ_DIR=$HOME/perigrain_v2_beta
+#cd $PROJ_DIR
+module purge
+module load mvapich2
+module load hdf5/1.10.6/intel-19.0.5-mvapich-2.3.3
+module load mpich/3.3.2/intel-19.0.5
+#--------------------Singularity Setting--------------
+PATH_RUN=/app/peri_v2/examples/hpcExample/myexample/run.sh
+##----------------THIS IS WRONG--------------
+PATH_OUT=/work/davdam/periHpc-output
+PATH_LOC=/home/davdam/perihpcExamples/3d-kalthoff-hpc
+PATH_IMG=/app/peri_v2/examples/hpcExample/myexample/ 
+IMG=/home/davdam/containers/peri_April_22_24.sif
+PATH_IMG2=/app/peri_v2 
+PATH_RUN2=./examples/hpcExample/myexample/run.sh
+PATH_MSH1=/app/peri_v2/meshdata/
+PATH_MSH2=/work/davdam/meshdata
+PATH_MPI1=/opt/mpich
+PATH_MPI2=/usr/local/packages/mpich/3.3.2/5xxyruzl
+#singularity exec -B $PATH_OUT:$PATH_OUT,$PATH_LOC:$PATH_IMG $IMG $PATH_RUN 
+#singularity exec -B $PATH_OUT:$PATH_OUT,$PATH_LOC:$PATH_IMG, $IMG bash -c "cd $PATH_IMG && ./run.sh"
+
+singularity exec -B $PATH_OUT:$PATH_OUT,$PATH_MPI2:$PATH_MPI1,$PATH_MSH2:$PATH_MSH1,$PATH_LOC:$PATH_IMG, $IMG bash -c "cd $PATH_IMG2 && $PATH_RUN2"
+
+
+
+
+
+
+
+
+
+
+
+

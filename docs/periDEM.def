@@ -1,0 +1,88 @@
+Bootstrap: docker
+From: ubuntu:20.04
+
+%environment
+    # Set MPICH environment variables
+    export MPICH_DIR=/opt/mpich
+    export PATH="$MPICH_DIR/bin:$PATH"
+    export LD_LIBRARY_PATH="$MPICH_DIR/lib:$LD_LIBRARY_PATH"
+    export MANPATH="$MPICH_DIR/share/man:$MANPATH"
+
+
+%post
+    echo "Setting up environment..."
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Update and install essential packages
+    apt-get update && apt-get install -y \
+        wget git bash gcc gfortran g++ make \
+        python3 python3-pip python3-dev python3-venv \
+        libhdf5-serial-dev python3-tk \
+        libhdf5-103 libhdf5-dev libhdf5-openmpi-103 \
+        libglu1-mesa libxcursor1 libxinerama1 \
+        libxrandr2 libxi6 libxcomposite1 libxt6 \
+        ncurses-term vim build-essential ranger tmux libxft2 valgrind
+
+    # Symlink python3 to python for compatibility
+    ln -s /usr/bin/python3 /usr/bin/python
+
+    # Update pip and install required Python packages
+    python -m pip install --upgrade pip
+    python3 -m pip install gekko gmsh h5py matplotlib meshio numpy pathos pygmsh seaborn scipy mpi4py
+ 
+
+ # Information about the version of MPICH to use
+    export MPICH_VERSION=4.1.2
+    export MPICH_URL="http://www.mpich.org/static/downloads/$MPICH_VERSION/mpich-$MPICH_VERSION.tar.gz"
+    export MPICH_DIR=/opt/mpich
+
+    echo "Installing MPICH..."
+    mkdir -p /tmp/mpich
+    mkdir -p /opt
+    cd /tmp/mpich && wget -O mpich-$MPICH_VERSION.tar.gz $MPICH_URL && tar xzf mpich-$MPICH_VERSION.tar.gz
+    cd /tmp/mpich/mpich-$MPICH_VERSION && ./configure --prefix=$MPICH_DIR && make -j$(nproc) && make install
+    # Update PATH for MPICH 
+    export PATH="/opt/mpich/bin:$PATH"
+    export LD_LIBRARY_PATH="/opt/mpich/lib:$LD_LIBRARY_PATH"
+
+ # Cleanup specific temporary files created by this script
+    rm -rf /tmp/mpich
+
+    # Clean package lists to reduce image size
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+
+
+
+    # Re-export the environment variables to ensure they are available globally
+    cat <<EOF >> /environment
+    export PATH="$MPICH_DIR/bin:$PATH"
+    export LD_LIBRARY_PATH="$MPICH_DIR/lib:$LD_LIBRARY_PATH"
+    EOF
+
+%files
+    # Copy project directory from build context (same folder as the .def file)
+    ./PeriDEM /app/PeriDEM
+
+    # Optional: Include user environment configuration files (if desired)
+    ./configs/.bashrc /root/.bashrc
+    ./configs/.vimrc /root/.vimrc
+    ./configs/.tmux.conf /root/.tmux.conf /root/.tmux.conf
+
+%runscript
+    echo "Running my application"
+    cd /app/perigrain-Nov-2024
+
+    make -f makefile_linux
+    make -f makefile_linux simulate3d
+
+    echo "Container setup complete. Ready to run simulations."
+
+
+
+%labels
+    Author Davood Damircheli
+    Version v2.0
+    Description Perigrain simulation container with MPI and HDF5 support for HPC compatibility
+
