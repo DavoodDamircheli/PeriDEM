@@ -53,7 +53,7 @@ T_o = $(T_cpp:%.cpp=%.o)
 T_o_Build = $(patsubst $(INCLUDE_DIR)/%, $(OBJ_DIR)/%, $(T_o))
 
 #all: dir simulate2d
-all: dir simulate2d
+all: dir simulate2d simulate3d
 
 simulate2d:
 	@echo "Building in 2D"

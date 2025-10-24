@@ -329,7 +329,7 @@ class Particle(object):
     Convention: All member variables are made accessible in the first level to make it compatible with other functions, i.e. self.pos instead of self.mesh.pos
     """
     # def __init__(self, shape, meshsize, material):
-    def __init__(self, mesh, shape, material, nbdarr_in_parallel=True, keep_mesh=False,shape_type='kalthoff'):
+    def __init__(self, mesh, shape, material, nbdarr_in_parallel=True, keep_mesh=False, shape_type='kalthoff'):
         self.shape = shape
 
         if keep_mesh:
