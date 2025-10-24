@@ -6,9 +6,6 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
 # from gekko import GEKKO
-import matplotlib
-
-
 
 #from multiprocessing import Pool
 from pathos.multiprocessing import ProcessingPool as Pool
@@ -22,8 +19,11 @@ import shape_dict
 import material_dict
 from genmesh import genmesh
 from arrangements import get_incenter_mesh_loc
+from scipy.spatial import cKDTree
+from multiprocessing import Pool, get_context
+
+
 import pdb
-#matplotlib.use('Agg')  # Use a non-GUI backend
 #pdb.set_trace()
 #######################################################################
 class Material(object):
@@ -197,35 +197,7 @@ def line_sphere_intersection(p1, p2, cx, cy, cz, r):
 
 
 
-def line_circle_intersection(p1, p2, cx, cy, r):
-    # Vector from p1 to p2
-    dp = np.array(p2) - np.array(p1)
 
-    # Vector from center of the sphere to p1
-    f = np.array(p1) - np.array([cx, cy])
-
-    # Coefficients of the quadratic equation
-    a = np.dot(dp, dp)
-    b = 2 * np.dot(f, dp)
-    c = np.dot(f, f) - r**2
-
-    # Discriminant
-    discriminant = b**2 - 4 * a * c
-
-    if discriminant < 0:
-        # No intersection
-        return False
-    else:
-        # Calculate the two possible solutions for t
-        discriminant_sqrt = np.sqrt(discriminant)
-        t1 = (-b - discriminant_sqrt) / (2 * a)
-        t2 = (-b + discriminant_sqrt) / (2 * a)
-
-        # Check if either t1 or t2 is within the segment [0, 1]
-        if (0 <= t1 <= 1) or (0 <= t2 <= 1):
-            return True
-        else:
-            return False
 
 #--------------end intersection of line segment with 3d wall------------
 
@@ -289,23 +261,6 @@ def lines_intersect(A1, A2, A3, A4):
         else:
             return False
 
-def ccw(a, b, c):
-    """Check if three points are listed in a counter-clockwise order."""
-    return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
-
-def segments_intersect(p1, p2, p3, p4):
-    """
-    Return True if line segments (p1-p2) and (p3-p4) intersect.
-    Each point should be a 2D tuple/list/array like (x, y).
-    """
-    p1 = np.array(p1)
-    p2 = np.array(p2)
-    p3 = np.array(p3)
-    p4 = np.array(p4)
-
-    return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) and (ccw(p1, p2, p3) != ccw(p1, p2, p4))
-
-
 def get_nbd_vertex_elem(T, total_vertices):
     """ From the element (facet) array, compute the facet-neighborhood array of the vertices
 
@@ -322,7 +277,185 @@ def get_nbd_vertex_elem(T, total_vertices):
         full_list.append(row_list.tolist())
 
     return full_list
-    
+
+
+
+
+
+def line_circle_intersection(p1, p2, cx, cy, r, *, inclusive=False, eps=1e-12):
+    """
+    Robust segment–circle test in 2D.
+    - Counts as intersection if the minimum distance from the circle center
+      to the *segment* is < r (or <= r if inclusive=True).
+    - Also catches 'both endpoints inside' cases.
+    """
+    p1 = np.asarray(p1, dtype=float)[:2]
+    p2 = np.asarray(p2, dtype=float)[:2]
+    c  = np.array([cx, cy], dtype=float)
+
+    r = float(r)
+    if r <= 0.0:
+        return False
+
+    # fast endpoint-inside checks
+    d1 = np.linalg.norm(p1 - c)
+    d2 = np.linalg.norm(p2 - c)
+    if inclusive:
+        if (d1 <= r + eps) or (d2 <= r + eps):
+            return True
+    else:
+        if (d1 <  r - eps) or (d2 <  r - eps):
+            return True
+
+    # degenerate segment?
+    v = p2 - p1
+    vv = float(np.dot(v, v))
+    if vv <= eps*eps:
+        # treat as a point (already checked endpoints)
+        # if both endpoints outside, no intersection
+        return False
+
+    # project center onto the segment
+    t = float(np.dot(c - p1, v) / vv)
+    t = max(0.0, min(1.0, t))  # clamp to segment
+    closest = p1 + t * v
+    dmin = np.linalg.norm(closest - c)
+
+    if inclusive:
+        return dmin <= r + eps
+    else:
+        return dmin <  r - eps
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# def line_circle_intersection(p1, p2, cx, cy, r):
+#     # Vector from p1 to p2
+#     dp = np.array(p2) - np.array(p1)
+#
+#     # Vector from center of the sphere to p1
+#     f = np.array(p1) - np.array([cx, cy])
+#
+#     # Coefficients of the quadratic equation
+#     a = np.dot(dp, dp)
+#     b = 2 * np.dot(f, dp)
+#     c = np.dot(f, f) - r**2
+#
+#     # Discriminant
+#     discriminant = b**2 - 4 * a * c
+#
+#     if discriminant < 0:
+#         # No intersection
+#         return False
+#     else:
+#         # Calculate the two possible solutions for t
+#         discriminant_sqrt = np.sqrt(discriminant)
+#         t1 = (-b - discriminant_sqrt) / (2 * a)
+#         t2 = (-b + discriminant_sqrt) / (2 * a)
+#
+#         # Check if either t1 or t2 is within the segment [0, 1]
+#         if (0 <= t1 <= 1) or (0 <= t2 <= 1):
+#             return True
+#         else:
+#             return False
+# def segments_intersect(p1, p2, p3, p4):
+#     """
+#     Return True if line segments (p1-p2) and (p3-p4) intersect.
+#     Each point should be a 2D tuple/list/array like (x, y).
+#     """
+#     p1 = np.array(p1)
+#     p2 = np.array(p2)
+#     p3 = np.array(p3)
+#     p4 = np.array(p4)
+#
+#     return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) and (ccw(p1, p2, p3) != ccw(p1, p2, p4))
+
+
+def _orient(a, b, c, eps=1e-12):
+    """Signed area / orientation of triangle abc.
+    >0: counterclockwise, <0: clockwise, ~0: colinear."""
+    ax, ay = a
+    bx, by = b
+    cx, cy = c
+    val = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+    if abs(val) <= eps:
+        return 0.0
+    return 1.0 if val > 0.0 else -1.0
+
+def _on_segment(a, b, c, eps=1e-12):
+    """Assumes a, b, c are colinear. Check if c lies on segment ab (inclusive)."""
+    ax, ay = a; bx, by = b; cx, cy = c
+    return (min(ax, bx) - eps <= cx <= max(ax, bx) + eps and
+            min(ay, by) - eps <= cy <= max(ay, by) + eps)
+
+def segments_intersect(p1, p2, p3, p4, *, inclusive=True, eps=1e-12):
+    """
+    Robust segment intersection in 2D.
+    - inclusive=True: touching or overlapping counts as intersection.
+    - inclusive=False: only proper interior intersection counts.
+    """
+    p1 = np.asarray(p1, dtype=float)[:2]
+    p2 = np.asarray(p2, dtype=float)[:2]
+    p3 = np.asarray(p3, dtype=float)[:2]
+    p4 = np.asarray(p4, dtype=float)[:2]
+
+    # Degenerate segments?
+    if np.allclose(p1, p2, atol=eps) or np.allclose(p3, p4, atol=eps):
+        # Treat a point hitting the other segment as intersection if inclusive
+        if inclusive:
+            # point-on-segment checks
+            if np.allclose(p1, p2, atol=eps) and (_on_segment(p3, p4, p1, eps)):
+                return True
+            if np.allclose(p3, p4, atol=eps) and (_on_segment(p1, p2, p3, eps)):
+                return True
+        return False
+
+    # Fast AABB reject
+    def _aabb(a, b):
+        return (min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1]))
+    a1, a2, a3, a4 = _aabb(p1, p2), _aabb(p3, p4), None, None
+    if (a1[1] + eps < a2[0] or a2[1] + eps < a1[0] or
+        a1[3] + eps < a2[2] or a2[3] + eps < a1[2]):
+        return False
+
+    o1 = _orient(p1, p2, p3, eps)
+    o2 = _orient(p1, p2, p4, eps)
+    o3 = _orient(p3, p4, p1, eps)
+    o4 = _orient(p3, p4, p2, eps)
+
+    # Proper intersection (strictly opposite orientations)
+    if (o1 * o2 < 0.0) and (o3 * o4 < 0.0):
+        return True
+
+    if inclusive:
+        # Colinear + on-segment cases (touching/overlap)
+        if o1 == 0.0 and _on_segment(p1, p2, p3, eps): return True
+        if o2 == 0.0 and _on_segment(p1, p2, p4, eps): return True
+        if o3 == 0.0 and _on_segment(p3, p4, p1, eps): return True
+        if o4 == 0.0 and _on_segment(p3, p4, p2, eps): return True
+
+    return False
+
+
+
+
 
 class Particle(object):
     """ A discretized particle with nodes 
@@ -335,12 +468,6 @@ class Particle(object):
         if keep_mesh:
             self.mesh = mesh
 
-        # generate mesh
-        # mesh = genmesh(shape.P, meshsize)
-        # self.mesh = mesh
-        #redundant assignment.  Should be self.mesh.pos
-        #Keeping it for compatibility with other functions.
-
         self.pos = mesh.pos
         self.vol = mesh.vol
 
@@ -350,21 +477,6 @@ class Particle(object):
 
         # default nonlocal boundary nodes: all
         self.nonlocal_bdry_nodes = range(len(self.pos))
-
-        # print('Computing boundary nodes: ')
-        # print('With hard-coded contact radius: ')
-        # c_R = 1e-3/5
-        # temp = []
-        # for p in range(len(self.edge_nodes)):
-            # e_node = self.edge_nodes[p]
-            # pos_node = self.pos[e_node]
-            # for q in range(len(self.pos)):
-                # pos_other = self.pos[q]
-                # d = np.sqrt(np.sum(np.square(pos_node - pos_other))) #norm
-                # # if (d <= self.contact.contact_radius):
-                # if (d <= c_R*1.1):
-                    # temp.append(q)
-        # self.nonlocal_bdry_nodes = list(set(temp))
 
         self.bdry_edges = mesh.bdry_edges
 
@@ -394,13 +506,13 @@ class Particle(object):
 
         # neighborhood array generation
         # This is connectivity: a list of edges that are connected
-        # print('Computing neighborhood connectivity.')
         self.NArr = []
         nci = self.shape.nonconvex_interceptor
-        # print('nci', nci)
         self.remove_ncvx_bonds = False
         self.interceptor = []
         self.remove_ncvx_bonds_3d = False 
+        
+        #------------------------>
         if (nci and self.dim ==2):
             self.remove_ncvx_bonds = True
             self.interceptor = nci.all()
@@ -415,67 +527,157 @@ class Particle(object):
         #print("-----------------------this is nonconcex-intercetor----------")
         self.name = shape_type 
         nbdarr_in_parallel = 1
-       
-       #-------------------------------------------------------------------
-        print(self.name)  
-       #-------------------------------------------------------------------
-        if nbdarr_in_parallel:  
-           print('nbdarr in parallel')
-           with Pool(processes=4) as a_pool:
-               if self.dim == 3:
-                   if self.name == 'kalthoff':
-                       all_bonds = a_pool.map(self.single_bond_3d_kalthoff, combinations(range(total_nodes), 2))
-                   elif self.name == 'plus3d':
-                       all_bonds = a_pool.map(self.single_bond_3d_plus3d, combinations(range(total_nodes), 2))
-                   elif self.name == 'hollow_sphere':
-                       # all_bonds = a_pool.map(self.single_bond_3d_sphere, combinations(range(total_nodes), 2))
-                       all_bonds = list(self.single_bond_3d_sphere(pair) for pair in combinations(range(total_nodes), 2))
-                   else:
-                       # all_bonds = list(self.single_bond_3d(pair) for pair in combinations(range(total_nodes), 2))
-                       all_bonds = list(a_pool.map(self.single_bond_3d, combinations(range(total_nodes), 2)))
-                   #except Exception as e:
-                           #print(f"Error occurred: {e}")
-               
-               elif self.dim == 2:
-                     if self.name == 'plate_2d_circle_void':
-                        all_bonds = list(self.single_bond_2d_plate_circle_void(pair) for pair in combinations(range(total_nodes), 2))
-                     if self.name == 'plate_2d_notch_1':
-                        all_bonds = list(self.single_bond_3d_plate_2d_notch_1(pair) for pair in combinations(range(total_nodes), 2))
-                     if self.name == 'plate_2d_notch_2':
-                        all_bonds = list(self.single_bond_3d_plate_2d_notch_2(pair) for pair in combinations(range(total_nodes), 2))
-                     else:                    
-                        all_bonds = a_pool.map(self.test_single_bond, combinations(range(total_nodes), 2))
-# No need to explicitly close/join with the 'with' context else:
-            ## Serial version
-        else: 
-            print('nbdarr in serial')
+                
+        total_nodes = len(self.pos)
+        
+        #--------------------------------------------
 
-            all_bonds = []
-            for ij in list(combinations(range(total_nodes), 2)):
-                if(self.dim==3):
-                    if self.name=='kalthoff':
-                        all_bonds.append(self.single_bond_3d_kalthoff(ij)) 
-                    if self.name == 'plus3d':
-                        all_bonds.append(self.single_bond_3d_plus3d(ij))
-                    elif self.name=='hollow_sphere':
-                        all_bonds.append(self.single_bond_3d_sphere(ij)) 
-                    else: 
-                        all_bonds.append(self.single_bond_3d(ij)) 
-                elif self.dim == 2:
-                      if self.name=='plate_2d_circle_void':
-                          all_bonds.append(self.single_bond_2d_plate_circle_void(ij))
-                      if self.name=='plate_2d_notch_1':
-                          all_bonds.append(self.single_bond_3d_plate_2d_notch_1(ij))
-                      if self.name=='plate_2d_notch_2':
-                          all_bonds.append(self.single_bond_3d_plate_2d_notch_2(ij))
-                      else:
-                          all_bonds.append( self.test_single_bond(ij))
-#
-        # remove all None
-        self.NArr = np.array([i for i in all_bonds if i is not None])
+                # ... inside your function ...
+
+        all_bonds = []  # safety
+
+        if nbdarr_in_parallel:
+            print('nbdarr in parallel')
+
+            # Build candidates ONCE (KDTree) to avoid O(N^2)
+            pos_d = self.pos[:, :self.dim]
+            tree = cKDTree(pos_d)
+            horizon = self.material.delta
+            cand_pairs = list(tree.query_pairs(horizon))  # set -> list of (i,j)
+
+            # Choose the per-pair filter
+            if nci and self.dim == 3:
+                dispatcher = {
+                    'kalthoff':       self.single_bond_3d_kalthoff,
+                    'plus3d':         self.single_bond_3d_plus3d,
+                    'hollow_sphere':  self.single_bond_3d_sphere,
+                }
+                worker = dispatcher.get(self.name, self.single_bond_3d)
+
+            elif nci and self.dim == 2:
+                dispatcher = {
+                    'plate_2d_circle_void': self.single_bond_2d_plate_circle_void,
+                    'plate_2d_vnotch_circle_void': self.single_bond_2d_plate_vnotch_circle_void,
+                    'plate_2d_notch_1':     self.single_bond_2d_plate_2d_notch_1,
+                    'plate_2d_notch_2':     self.single_bond_2d_plate_2d_notch_2,
+                }
+                worker = dispatcher.get(self.name, self.test_single_bond)
+            else:
+                # no NCI → geometric neighbors already computed
+                self.NArr = np.array(sorted(cand_pairs))
+                return
+
+            # Map in parallel; ensure no plotting inside `worker`
+            # On Linux you can use get_context("fork") for stability
+            with get_context("fork").Pool() as a_pool:
+                results = a_pool.map(worker, cand_pairs)
+
+            # Filter out Nones and store
+            all_bonds = [p for p in results if p is not None]
+
+        else:
+            print("Hi (non-parallel path disabled)")
+            # If you truly never want non-parallel: keep as is or mirror the same KDTree path here if needed.
+
+        # Finalize
+        self.NArr = np.array(sorted(all_bonds))  # sorted keeps (i<j) order stable
+
+
+        #--------------------------------------------
+
+        # if nbdarr_in_parallel:
+        #     print('nbdarr in parallel')
+        #     with Pool() as a_pool:
+        #         # ---------- 3D, with nonconvex interceptor ----------
+        #         if nci and self.dim == 3:
+        #             if self.name == 'kalthoff':
+        #                 all_bonds = a_pool.map(self.single_bond_3d_kalthoff,
+        #                                        combinations(range(total_nodes), 2))
+        #             elif self.name == 'plus3d':
+        #                 all_bonds = a_pool.map(self.single_bond_3d_plus3d,
+        #                                        combinations(range(total_nodes), 2))
+        #             elif self.name == 'hollow_sphere':
+        #                 all_bonds = a_pool.map(self.single_bond_3d_sphere,
+        #                                        combinations(range(total_nodes), 2))
+        #             else:
+        #                 # default 3D handler if specific case not matched
+        #                 all_bonds = a_pool.map(self.single_bond_3d,
+        #                                        combinations(range(total_nodes), 2))
+        #
+        #         # ---------- 2D, with nonconvex interceptor ----------
+        #         elif nci and self.dim == 2:
+        #             if self.name == 'plate_2d_circle_void':
+        #                 all_bonds = list(a_pool.map(self.single_bond_2d_plate_circle_void,
+        #                                             combinations(range(total_nodes), 2)))
+        #             elif self.name == 'plate_2d_notch_1':
+        #                 # NOTE: method name suggests 3d; keep as provided. Consider renaming to _2d_.
+        #                 all_bonds = list(a_pool.map(self.single_bond_2d_plate_2d_notch_1,
+        #                                             combinations(range(total_nodes), 2)))
+        #             elif self.name == 'plate_2d_notch_2':
+        #                 # Build pairs via KDTree first
+        #                 tree = cKDTree(self.pos[:, :2])
+        #                 horizon = self.material.delta
+        #                 cand_pairs = list(tree.query_pairs(horizon))
+        #                 results = a_pool.map(self.single_bond_2d_plate_2d_notch_2, cand_pairs)
+        #                 all_bonds = [e for e in results if e is not None]
+        #             else:
+        #                 all_bonds = list(a_pool.map(self.test_single_bond,
+        #                                             combinations(range(total_nodes), 2)))
+        #
+        #         # ---------- No NCI (fast near-neighbor via KDTree), any dim ----------
+        #         else:
+        #             print("i am finding bonds (KDTree)")
+        #             tree = cKDTree(self.pos)   # self.pos: array of node coords (N,dim)
+        #             horizon = self.material.delta
+        #             pairs = tree.query_pairs(horizon)   # set of (i,j) with i<j
+        #             all_bonds = list(pairs)
+        #
+        # else:
+        #     print("Hi") 
+            # Non-parallel path (optional): mirror the same logic without Pool
+            # if nci and self.dim == 3:
+            #     if self.name == 'kalthoff':
+            #         all_bonds = list(map(self.single_bond_3d_kalthoff,
+            #                              combinations(range(total_nodes), 2)))
+            #     elif self.name == 'plus3d':
+            #         all_bonds = list(map(self.single_bond_3d_plus3d,
+            #                              combinations(range(total_nodes), 2)))
+            #     elif self.name == 'hollow_sphere':
+            #         all_bonds = list(map(self.single_bond_3d_sphere,
+            #                              combinations(range(total_nodes), 2)))
+            #     else:
+            #         all_bonds = list(map(self.single_bond_3d,
+            #                              combinations(range(total_nodes), 2)))
+            # elif nci and self.dim == 2:
+            #     if self.name == 'plate_2d_circle_void':
+            #         all_bonds = [self.single_bond_2d_plate_circle_void(pair)
+            #                      for pair in combinations(range(total_nodes), 2)]
+            #     elif self.name == 'plate_2d_notch_1':
+            #         all_bonds = [self.single_bond_2d_plate_2d_notch_1(pair)
+            #                      for pair in combinations(range(total_nodes), 2)]
+            #     elif self.name == 'plate_2d_notch_2':
+            #         all_bonds = [self.single_bond_2d_plate_2d_notch_2(pair)
+            #                      for pair in combinations(range(total_nodes), 2)]
+            #     else:
+            #         all_bonds = [self.test_single_bond(pair)
+            #                      for pair in combinations(range(total_nodes), 2)]
+            # else:
+            #     tree = cKDTree(self.pos)
+            #     horizon = self.material.delta
+            #     all_bonds = list(tree.query_pairs(horizon))
+            #
+
+
+
+        #---------------------------------------------------------------------
+        #self.NArr = np.array([i for i in all_bonds if i is not None])
 
         # print the total number of bonds in a particle
-        print('_'+str(len(self.NArr)), end=' ', flush=True)
+        
+        #print('_'+str(len(self.NArr)), end=' ', flush=True)
+        # Print the total number of bonds in this particle
+        print(f"Total bonds: {len(self.NArr)}")
+    
 
     def test_single_bond(self, ij_pair):
         # print('ij', ij_pair, end='\n', flush=True)
@@ -516,6 +718,225 @@ class Particle(object):
                     # return None
             else:
                 return [i,j]
+
+
+    #--------------eliminiating bonds in 2d_plate_circle_void--------------
+    def single_bond_2d_plate_circle_void(self, ij_pair):
+        # print('ij', ij_pair, end='\n', flush=True)
+        i = ij_pair[0]
+        j = ij_pair[1]
+
+        p_i = self.pos[i]
+        p_j = self.pos[j]
+        
+        if self.remove_ncvx_bonds: 
+
+            r = self.interceptor
+                    #print("-----------------------this is nonconcex-intercetor----------")
+            #print(r)
+            inside_rad = r[0]
+            cx = r[1] 
+            cy = r[2] 
+            
+
+        d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
+        if (d <= self.material.delta):
+            ##### remove nonconvex bonds
+            if self.remove_ncvx_bonds: 
+
+                #print("remove is on") 
+                intersects = False
+                for k in range(1):
+                    if (line_circle_intersection(p_i, p_j, cx, cy, inside_rad,inclusive=False)):                   
+                        intersects = True
+                        break
+
+                if not intersects:
+                    return [i,j]
+            else:
+                return [i,j]
+
+    #--------------eliminiating bonds in 2d_plate_circle_void--------------
+    def single_bond_2d_plate_vnotch_circle_void(self, ij_pair):
+        i, j = ij_pair
+        pi = self.pos[i][:2]
+        pj = self.pos[j][:2]
+
+        # horizon check (quick reject)
+        if np.linalg.norm(pj - pi) > self.material.delta:
+            return None
+
+        if not getattr(self, "remove_ncvx_bonds", False):
+            return (i, j)
+
+        #mouths = r.obt_bisec   # expected shape (4,2): [A1,B1,A2,B2]
+        # where M1, M2, A1 are 2D tuples/lists
+        rcvma = self.interceptor
+        inside_rad = float(rcvma[0])
+        cx        = float(rcvma[1])
+        cy        = float(rcvma[2])
+        A1        = np.asarray(rcvma[3], dtype=float)
+        B1        = np.asarray(rcvma[4], dtype=float)
+
+        # If the bond crosses either mouth segment, drop it
+        if segments_intersect(pi, pj, A1, B1):
+            return None
+        if (line_circle_intersection(pi, pj, cx, cy, inside_rad,inclusive=False)):                   
+            return None
+
+ 
+
+        return (i, j)
+
+
+
+
+
+
+
+    #----------------------------------------------------
+    def _single_bond_2d_plate_2d_notch_2(self, ij_pair):
+        i, j = ij_pair
+        pi = self.pos[i][:2]
+        pj = self.pos[j][:2]
+        # (Optional) The KDTree already enforces horizon; you can drop this:
+        # if np.linalg.norm(pj - pi) > self.material.delta:
+        #     return None
+
+        # If we’re not removing non-convex bonds, keep it
+        #if not getattr(self, "remove_ncvx_bonds", False):
+        #    return (i, j)
+
+        # Expect self.interceptor.notch_edges as an array of shape (4, 2, 2):
+        # [ [E1_start, E1_end], [E2_start, E2_end], [E3_start, E3_end], [E4_start, E4_end] ]
+        edges = self.interceptor
+        if edges is None:
+            
+            print("here") 
+            # Fallback: keep the bond if no edges are defined
+            return (i, j)
+        # Remove if the bond intersects ANY notch edge
+        # Use inclusive=False so tangential touches aren’t over-removed
+        for e in edges:
+            a, b = e[0], e[1]
+            if segments_intersect(pi, pj, a, b, inclusive=False):
+                print("working") 
+                return None
+
+        return (i, j)
+
+
+
+    #----------------------------------------------------
+    def single_bond_2d_plate_2d_notch_2(self, ij_pair):
+        i, j = ij_pair
+        pi = self.pos[i][:2]
+        pj = self.pos[j][:2]
+
+        # horizon check (quick reject)
+        if np.linalg.norm(pj - pi) > self.material.delta:
+            return None
+
+        if not getattr(self, "remove_ncvx_bonds", False):
+            return (i, j)
+
+        # Fetch notch mouth segments from interceptor (A1,B1,A2,B2)
+        r = self.interceptor
+        #mouths = r.obt_bisec   # expected shape (4,2): [A1,B1,A2,B2]
+         
+        mouths = self.interceptor
+        A1, B1, A2, B2 = mouths[0], mouths[1], mouths[2], mouths[3]
+
+        # If the bond crosses either mouth segment, drop it
+        if segments_intersect(pi, pj, A1, B1) or segments_intersect(pi, pj, A2, B2):
+            return None
+
+        return (i, j)
+
+    #--------------eliminiating bonds 2 D plot 2 notches--------------
+    # def _single_bond_2d_plate_2d_notch_2(self, ij_pair):
+    #     # print('ij', ij_pair, end='\n', flush=True)
+    #     i = ij_pair[0]
+    #     j = ij_pair[1]
+    #
+    #     p_i = self.pos[i]
+    #     p_j = self.pos[j]
+    #     d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
+    #     
+    #     if self.remove_ncvx_bonds: 
+    #
+    #         r = self.interceptor
+    #             
+    #         w1A = r[0]
+    #         w1B = r[1]  
+    #
+    #
+    #         w2A = r[2]
+    #         w2B = r[3]
+    #
+    #     if (d <= self.material.delta):
+    #        
+    #         if self.remove_ncvx_bonds: 
+    #
+    #             
+    #             intersects = False
+    #             
+    #                 
+    #                 if (segments_intersect(w1A,w1B,p_i,p_j)):
+    #                    
+    #                     intersects = True
+    #                     break
+    #
+    #             if not intersects:
+    #               
+    #                 return [i,j]
+    #            
+    #         else:
+    #             return [i,j]
+    #--------------------------------------------------------------
+
+ 
+    def single_bond_2d_plate_2d_notch_1(self, ij_pair):
+        # print('ij', ij_pair, end='\n', flush=True)
+        i = ij_pair[0]
+        j = ij_pair[1]
+
+        p_i = self.pos[i]
+        p_j = self.pos[j]
+        d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
+        
+        if self.remove_ncvx_bonds: 
+
+            r = self.interceptor
+                
+            w1A = r[0]
+            w1B = r[1]  
+
+
+        if (d <= self.material.delta):
+           
+            if self.remove_ncvx_bonds: 
+
+                
+                intersects = False
+                for k in range(1):
+                
+                    
+                    if (segments_intersect(w1A,w1B,p_i,p_j)):
+                       
+                        intersects = True
+                        break
+
+
+                if not intersects:
+                  
+                    return [i,j]
+               
+            else:
+                return [i,j]
+    #--------------------------------------------------------------
+
+
 
 
 
@@ -634,43 +1055,6 @@ class Particle(object):
                 return [i,j]
 
 
-#--------------eliminiating bonds in 2d_plate_circle_void--------------
-    def single_bond_2d_plate_circle_void(self, ij_pair):
-        # print('ij', ij_pair, end='\n', flush=True)
-        i = ij_pair[0]
-        j = ij_pair[1]
-
-        p_i = self.pos[i]
-        p_j = self.pos[j]
-        
-        if self.remove_ncvx_bonds: 
-
-            r = self.interceptor
-                    #print("-----------------------this is nonconcex-intercetor----------")
-            #print(r)
-            inside_rad = r[0]
-            cx = r[1] 
-            cy = r[2] 
-            
-
-        d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
-        if (d <= self.material.delta):
-            ##### remove nonconvex bonds
-            if self.remove_ncvx_bonds: 
-
-                #print("remove is on") 
-                intersects = False
-                for k in range(1):
-                    if (line_circle_intersection(p_i, p_j, cx, cy, inside_rad)):                   
-                        intersects = True
-                        break
-
-                if not intersects:
-                    return [i,j]
-            else:
-                return [i,j]
-
-
 #--------------eliminiating bonds in 3d plus--------------
     def single_bond_3d_sphere(self, ij_pair):
         # print('ij', ij_pair, end='\n', flush=True)
@@ -707,96 +1091,7 @@ class Particle(object):
             else:
                 return [i,j]
 
-     #--------------eliminiating bonds 2 D plot 2 notches--------------
-    def single_bond_3d_plate_2d_notch_2(self, ij_pair):
-        # print('ij', ij_pair, end='\n', flush=True)
-        i = ij_pair[0]
-        j = ij_pair[1]
-
-        p_i = self.pos[i]
-        p_j = self.pos[j]
-        d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
-        
-        if self.remove_ncvx_bonds: 
-
-            r = self.interceptor
-                
-            w1A = r[0]
-            w1B = r[1]  
-
-
-            w2A = r[2]
-            w2B = r[3]
-
-        if (d <= self.material.delta):
-           
-            if self.remove_ncvx_bonds: 
-
-                
-                intersects = False
-                for k in range(1):
-                
-                    
-                    if (segments_intersect(w1A,w1B,p_i,p_j)):
-                       
-                        intersects = True
-                        break
-
-
-                    if  (segments_intersect(w2A,w2B,p_i,p_j, z)):
-                    
-                        intersects = True
-                        break
-
-                if not intersects:
-                  
-                    return [i,j]
-               
-            else:
-                return [i,j]
- #--------------------------------------------------------------
-
- 
-    def single_bond_3d_plate_2d_notch_1(self, ij_pair):
-        # print('ij', ij_pair, end='\n', flush=True)
-        i = ij_pair[0]
-        j = ij_pair[1]
-
-        p_i = self.pos[i]
-        p_j = self.pos[j]
-        d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
-        
-        if self.remove_ncvx_bonds: 
-
-            r = self.interceptor
-                
-            w1A = r[0]
-            w1B = r[1]  
-
-
-        if (d <= self.material.delta):
-           
-            if self.remove_ncvx_bonds: 
-
-                
-                intersects = False
-                for k in range(1):
-                
-                    
-                    if (segments_intersect(w1A,w1B,p_i,p_j)):
-                       
-                        intersects = True
-                        break
-
-
-                if not intersects:
-                  
-                    return [i,j]
-               
-            else:
-                return [i,j]
- #--------------------------------------------------------------
-     
+     #--------------eliminiating bonds in 3d alpha--------------
     def single_bond_3d_kalthoff(self, ij_pair):
         # print('ij', ij_pair, end='\n', flush=True)
         i = ij_pair[0]
@@ -875,19 +1170,22 @@ class Particle(object):
         p_i = self.pos[i]
         p_j = self.pos[j]
         d = np.sqrt(np.sum(np.square(p_j - p_i))) #norm
+        r = self.interceptor
+                #print("-----------------------this is nonconcex-intercetor----------")
+        Al1=self.Al1
+        Al2=self.Al2
+        Ar1=self.Ar1
+        Ar2=self.Ar2
+
+        # material.delta is peridynamic horizon
+        tnodes = min(len(Al1),len(Al2),len(Ar1),len(Ar2))
+        #print(d)
+        #print("this is delta")
+        #print(self.material.delta)
+        #print(d<=self.material.delta)
         if (d <= self.material.delta):
             ##### remove nonconvex bonds
             if self.remove_ncvx_bonds_3d: 
-                r = self.interceptor
-                #print("-----------------------this is nonconcex-intercetor----------")
-                Al1=self.Al1
-                Al2=self.Al2
-                Ar1=self.Ar1
-                Ar2=self.Ar2
-
-                # material.delta is peridynamic horizon
-                tnodes = min(len(Al1),len(Al2),len(Ar1),len(Ar2))
-                #       
 
                 #print("remove is on") 
                 intersects = False
@@ -1033,10 +1331,10 @@ class ShapeList(object):
         self.count_list = []
         self.meshsize_list = []
         self.material_list = []
-
+        self.shape_type_list = []
         # self.msh_file_list = []
 
-    def append(self, shape, count, meshsize, material, plot_shape = True,shape_type='kalthoff'):
+    def append(self, shape, count, meshsize, material, plot_shape = True,shape_type=None):
     # def append(self, shape, count, meshsize, material, msh_file= None):
         """TODO: Docstring for append.
 
@@ -1051,8 +1349,7 @@ class ShapeList(object):
         self.count_list.append(count)
         self.meshsize_list.append(meshsize)
         self.material_list.append(material)
-        self.shape_type=shape_type
-
+        self.shape_type_list.append(shape_type) 
 
 
     def generate_mesh(self, dimension = 2, contact_radius = None, plot_mesh = True, plot_node_text=False, plot_shape = True, shapes_in_parallel=False, print_nnodes=True, keep_mesh=False):
@@ -1109,9 +1406,12 @@ class ShapeList(object):
 
             # print('total mesh volume: ', np.sum(mesh.vol))
 
-            PP = Particle(mesh=mesh, shape=self.shape_list[sh], material=self.material_list[sh], nbdarr_in_parallel=nbdarr_in_parallel, keep_mesh=keep_mesh,shape_type=self.shape_type)
+            PP = Particle(mesh=mesh, shape=self.shape_list[sh], material=self.material_list[sh], nbdarr_in_parallel=nbdarr_in_parallel, keep_mesh=keep_mesh,shape_type=self.shape_type_list[sh])
             nnodes = len(PP.pos)
-            print(str(sh)+'('+str(nnodes)+')', end=' ', flush=True)
+            #print("shape  :",str(sh)+"number of nodes:",'('+str(nnodes)+')', end=' ', flush=True)
+            
+            print("------------particle profile------------")
+            print(f"shape: {sh}  number of nodes: ({nnodes})", end=" ", flush=True)
 
             # print('Done generating particles')
 
@@ -1382,6 +1682,45 @@ def plot_single_bonds(A1,A2,B1,B2):
 
 
 def plot_bonds(particles):
+    """
+    Plot bonds for 2D or 3D particles.
+    Assumes each particle has:
+      - pos: array of shape (N, dim) with coordinates
+      - NArr: list/array of (i,j) bond indices
+    """
+    for sh in range(len(particles)):
+        shape = particles[sh]
+        for count in range(len(shape)):
+            part = particles[sh][count]
+            total_convex_bond = [(part.pos[a], part.pos[b]) for a, b in part.NArr]
+            print("this the total bonds")
+            print(len(total_convex_bond)) 
+            dim = part.pos.shape[1]  # detect dimension (2 or 3)
+            
+            fig = plt.figure()
+            if dim == 3:
+                ax = fig.add_subplot(111, projection='3d')
+                for start, end in total_convex_bond:
+                    ax.plot([start[0], end[0]],
+                            [start[1], end[1]],
+                            [start[2], end[2]], 'b-')
+                ax.set_xlabel('X axis')
+                ax.set_ylabel('Y axis')
+                ax.set_zlabel('Z axis')
+            elif dim == 2:
+                ax = fig.add_subplot(111)
+                for start, end in total_convex_bond:
+                    ax.plot([start[0], end[0]],
+                            [start[1], end[1]], 'b-')
+                ax.set_xlabel('X axis')
+                ax.set_ylabel('Y axis')
+                ax.set_aspect('equal', adjustable='box')  # keep proportions
+
+            plt.title('Bonds after removing nonconvex part')
+            plt.savefig('bonds.png', dpi=300, bbox_inches='tight')
+            plt.show()
+
+def _plot_bonds(particles):
     
 
     totalbonds = []
@@ -3673,30 +4012,3 @@ def hopper():
     plot_setup(particles, wall=wall, contact_radius=contact_radius, delta=delta, show_plot=show_plot, dotsize=dotsize)
 
     return Experiment(particles, wall, contact)
-    
-    
-    
-def auto_transform_particles(particles, count, rad, contact_radius):
-    """
-    Automatically transforms particles by applying shifts and rotations based on their index.
-
-    Args:
-        particles: List of particles to transform.
-        count: Number of particles to transform.
-        rad: Radius of the particles.
-        contact_radius: Contact radius for shifting.
-    """
-    for i in range(count):
-        # Rotate each particle
-        if i % 3 == 0:
-            particles[0][i].rotate3d('z', np.pi/2)
-        elif i % 3 == 1:
-            particles[0][i].rotate3d('z', -np.pi/2)
-        else:
-            particles[0][i].rotate3d('z', np.pi)
-        
-        # Shift each particle programmatically
-        shift_x = (i % 3) * (rad + contact_radius * 1.1)
-        shift_y = (i % 2) * 0.3 * rad + contact_radius * 1.1
-        shift_z = (i // 3) * (1.5 * rad + contact_radius * 1.1)
-        particles[0][i].shift([shift_x, shift_y, shift_z])
