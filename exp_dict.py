@@ -1529,6 +1529,54 @@ class Wall(object):
         """
         return self.get_v() * self.get_h()
 
+
+
+
+
+
+#----------------cylinder class---------------------
+
+import numpy as np
+
+class CylinderWall3d:
+    """Axis-aligned cylinder (axis=z) for setup/HDF5 export."""
+    def __init__(self, allow=0.0, xc=0.0, yc=0.0, z_min=0.0, z_max=1.0, radius=0.5,
+                 speed_bottom=0.0, speed_top=0.0, speed_side=0.0):
+        self.kind   = "cylinder"   # used by Experiment.save()
+        self.allow  = float(allow)
+        self.xc     = float(xc)
+        self.yc     = float(yc)
+        self.z_min  = float(z_min)
+        self.z_max  = float(z_max)
+        self.radius = float(radius)
+        # optional, if you later use moving walls:
+        self.speed_bottom = float(speed_bottom)
+        self.speed_top    = float(speed_top)
+        self.speed_side   = float(speed_side)
+
+    def get_lrtp(self):
+        """Return AABB like Wall3d.get_lrtp() so downstream stays happy."""
+        x_min = self.xc - self.radius
+        y_min = self.yc - self.radius
+        z_min = self.z_min
+        x_max = self.xc + self.radius
+        y_max = self.yc + self.radius
+        z_max = self.z_max
+        return np.array([x_min, y_min, z_min, x_max, y_max, z_max], dtype=float)
+
+    # Optional helper if you want explicit access in postproc
+    def get_cylinder_params(self):
+        return dict(xc=self.xc, yc=self.yc, z_min=self.z_min, z_max=self.z_max,
+                    radius=self.radius, allow=self.allow,
+                    speed_bottom=self.speed_bottom, speed_top=self.speed_top, speed_side=self.speed_side)
+
+
+
+
+
+
+
+#----------------cylinder class---------------------
 class Wall3d(object):
     """ Geometric wall """
     def __init__(self, allow = 0, x_min = None, y_min = None, z_min = None, x_max = None, y_max = None, z_max = None):
@@ -2068,8 +2116,184 @@ def plot3d_setup(particles, dotsize=0.5, contact_radius=None, delta=None, wall=N
     if show_plot:
         plt.show()
 
+#-----------------------------------------ploting cylinder-----------------------------
 
 
+
+
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+# --- helper: build cylinder wireframe as line segments (M, 2, 3) ---
+def _cylinder_wire_segments(xc, yc, z_min, z_max, R, n_ring=128, n_vertical=12):
+    """
+    Returns an array of 3D line segments approximating a cylinder wireframe.
+    Segments shape: (M, 2, 3).
+    """
+    segs = []
+
+    # Rings (top & bottom)
+    theta = np.linspace(0.0, 2.0*np.pi, n_ring, endpoint=True)
+    xt = xc + R*np.cos(theta)
+    yt = yc + R*np.sin(theta)
+    xb = xt
+    yb = yt
+    zt = np.full_like(xt, z_max)
+    zb = np.full_like(xb, z_min)
+
+    # connect consecutive points for both rings
+    for k in range(n_ring-1):
+        segs.append(np.array([[xt[k], yt[k], zt[k]],
+                              [xt[k+1], yt[k+1], zt[k+1]]]))
+        segs.append(np.array([[xb[k], yb[k], zb[k]],
+                              [xb[k+1], yb[k+1], zb[k+1]]]))
+    # close rings
+    segs.append(np.array([[xt[-1], yt[-1], zt[-1]], [xt[0], yt[0], zt[0]]]))
+    segs.append(np.array([[xb[-1], yb[-1], zb[-1]], [xb[0], yb[0], zb[0]]]))
+
+    # Vertical generators
+    theta_v = np.linspace(0.0, 2.0*np.pi, n_vertical, endpoint=False)
+    xv = xc + R*np.cos(theta_v)
+    yv = yc + R*np.sin(theta_v)
+    for k in range(n_vertical):
+        segs.append(np.array([[xv[k], yv[k], z_min],
+                              [xv[k], yv[k], z_max]]))
+
+    return np.array(segs)
+
+
+def plot3d_setup_v2(particles, dotsize=0.5, contact_radius=None, delta=None, wall=None,
+                 show_plot=True, adaptive_dotsize=False, show_particle_index=False,
+                 save_filename='setup.png', trisurf=False, trisurf_transparent=False,
+                 trisurf_linewidth=0.1, trisurf_alpha=0.6, noscatter=False):
+    """plots the particle setup
+    :particles: array of particles
+    """
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    min_vol = 1
+    if adaptive_dotsize:
+        slot_shape = np.zeros(len(particles))
+        for sh in range(len(particles)):
+            shape = particles[sh]
+            slot_count = np.zeros(len(shape))
+            for count in range(len(shape)):
+                part = particles[sh][count]
+                slot_count[count] = np.min(part.vol)
+            slot_shape[sh] = np.min(slot_count)
+        min_vol = np.min(slot_shape)
+
+    for sh in range(len(particles)):
+        shape = particles[sh]
+        for count in range(len(shape)):
+            part = particles[sh][count]
+            P = part.pos
+            if adaptive_dotsize:
+                dval = np.sqrt(part.vol/min_vol) * float(dotsize)
+            else:
+                dval = dotsize
+
+            if not noscatter:
+                ax.scatter(P[:,0], P[:,1], P[:,2], s=dval, marker='.', linewidth=0, cmap='viridis')
+
+            # show clamped nodes
+            cc = part.clamped_nodes
+            for j in range(len(cc)):
+                c = cc[j]
+                if not noscatter:
+                    ax.scatter(P[c,0], P[c,1], P[c,2], c='r', s=dval, linewidths=0)
+
+            if show_particle_index:
+                meanP = np.mean(P, axis=0)
+                ax.text(meanP[0], meanP[1], meanP[2], str(count))
+
+            if trisurf:
+                if trisurf_transparent:
+                    color = (0,0,0,0)
+                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2],
+                                    triangles=particles[sh][count].bdry_edges,
+                                    color=color,
+                                    linewidth=trisurf_linewidth,
+                                    antialiased=True, edgecolor='k')
+                else:
+                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2],
+                                    triangles=particles[sh][count].bdry_edges,
+                                    alpha=trisurf_alpha,
+                                    linewidth=trisurf_linewidth,
+                                    antialiased=True, edgecolor='k')
+
+    # Draw a reference circle for contact radius at first node of first particle
+    if contact_radius:
+        part = particles[0][0]
+        node = 0
+        x0, y0, z0 = part.pos[node]
+        tt = np.linspace(0, 2*np.pi, 200, endpoint=True)
+        xx = contact_radius * np.cos(tt) + x0
+        yy = contact_radius * np.sin(tt) + y0
+        ax.plot(xx, yy, zs=z0)
+
+    # Draw a reference circle for delta
+    if delta:
+        part = particles[0][0]
+        node = 0
+        x0, y0, z0 = part.pos[node]
+        tt = np.linspace(0, 2*np.pi, 200, endpoint=True)
+        xx = delta * np.cos(tt) + x0
+        yy = delta * np.sin(tt) + y0
+        ax.plot(xx, yy, zs=z0)
+
+    # ---- WALL RENDERING -------------------------------------------------
+    if wall:
+        wall_alpha = 0.8
+        wall_linewidth = 1.0
+
+        # Prefer an explicit flag, fall back to presence of 'radius'
+        kind = getattr(wall, 'kind', None)
+        is_cylinder = (kind == 'cylinder') or hasattr(wall, 'radius')
+
+        if is_cylinder:
+            # Expect attrs: xc, yc, z_min, z_max, radius
+            segs = _cylinder_wire_segments(
+                xc=wall.xc, yc=wall.yc, z_min=wall.z_min, z_max=wall.z_max, R=wall.radius,
+                n_ring=160, n_vertical=12
+            )
+            lc = Line3DCollection(segs, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
+            ax.add_collection(lc)
+            # Set limits from cylinder AABB
+            x_min, y_min, z_min, x_max, y_max, z_max = wall.get_lrtp()
+            ax.set_xlim3d([x_min, x_max])
+            ax.set_ylim3d([y_min, y_max])
+            ax.set_zlim3d([z_min, z_max])
+        else:
+            # Legacy box: use provided edges
+            ls = wall.get_lines()
+            lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
+            ax.add_collection(lc)
+            # Use AABB to set limits (more robust than symmetric about 0)
+            x_min, y_min, z_min, x_max, y_max, z_max = wall.get_lrtp()
+            ax.set_xlim3d([x_min, x_max])
+            ax.set_ylim3d([y_min, y_max])
+            ax.set_zlim3d([z_min, z_max])
+    else:
+        # Fallback: autoscale based on first particle if no wall
+        P0 = particles[0][0].pos
+        mins = P0.min(axis=0); maxs = P0.max(axis=0)
+        ax.set_xlim3d([mins[0], maxs[0]])
+        ax.set_ylim3d([mins[1], maxs[1]])
+        ax.set_zlim3d([mins[2], maxs[2]])
+
+    ax.set_box_aspect((1, 1, 1))
+    ax.grid(True)
+    plt.savefig(save_filename, dpi=300, bbox_inches='tight')
+    if show_plot:
+        plt.show()
+
+#-----------------------------------------ploting cylinder-----------------------------
 class Experiment(object):
 
     """Experiment setup"""
@@ -2183,8 +2407,40 @@ class Experiment(object):
             # wall info
             f.create_dataset('wall/allow_wall', data = [[self.wall.allow]])
             f.create_dataset('wall/geom_wall_info', data = np.array([self.wall.get_lrtp()]).transpose() )
+#------------------New---------------------
+            wall_group = f['/wall']
+            kind = getattr(self.wall, 'kind', None)
+            if kind is None:
+                # assume box if legacy Wall3d (no 'kind' attribute)
+                kind = 'box'
+            _h5_write_str(wall_group, 'type', kind)
 
-#######################################################################
+            if kind == 'cylinder':
+                cyl = wall_group.require_group('cylinder')
+                # clean old datasets if re-saving
+                for name in ['xc','yc','z_min','z_max','radius','allow',
+                             'speed_bottom','speed_top','speed_side']:
+                    if name in cyl: del cyl[name]
+                cyl.create_dataset('xc',     data=self.wall.xc)
+                cyl.create_dataset('yc',     data=self.wall.yc)
+                cyl.create_dataset('z_min',  data=self.wall.z_min)
+                cyl.create_dataset('z_max',  data=self.wall.z_max)
+                cyl.create_dataset('radius', data=self.wall.radius)
+                cyl.create_dataset('allow',  data=self.wall.allow)
+                # optional speeds if you use moving walls; zeros are fine
+                cyl.create_dataset('speed_bottom', data=self.wall.speed_bottom)
+                cyl.create_dataset('speed_top',    data=self.wall.speed_top)
+                cyl.create_dataset('speed_side',   data=self.wall.speed_side)
+
+
+
+def _h5_write_str(group, name, value):
+    dt = h5py.string_dtype(encoding='utf-8')
+    if name in group: del group[name]
+    group.create_dataset(name, data=value, dtype=dt)
+
+
+######################################################################
 
 def icetest1():
     """ Particle to collapse under its own weight
