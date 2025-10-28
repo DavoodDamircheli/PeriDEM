@@ -216,6 +216,14 @@ public:
   double speed_y_max = 0;
   double speed_z_max = 0;
 
+  // cylindrical wall
+    bool wall_cyl = 0;
+    double wall_cyl_cent_x = 0;
+    double wall_cyl_cent_y = 0;
+    double wall_cyl_rad = 1.5e-3;
+
+  Matrix<double, 1, dim> reaction_r ; // = Matrix<double, 1, dim>::Zero();
+
   RectWall(bool allow) : allow_wall(allow){};
 
   vector<double> lrtb() {
@@ -284,6 +292,8 @@ public:
       reaction_x_max = Matrix<double, 1, dim>::Zero();
       reaction_y_max = Matrix<double, 1, dim>::Zero();
       reaction_z_max = Matrix<double, 1, dim>::Zero();
+
+      reaction_r = Matrix<double, 1, dim>::Zero();
   };
 
   // virtual ~RectWall ();
@@ -367,12 +377,164 @@ void apply_config(ConfigVal CFGV) {
 	speed_x_max = CFGV.speed_wall_x_max;
 	speed_y_max = CFGV.speed_wall_y_max;
 	speed_z_max = CFGV.speed_wall_z_max;
+
+	if (CFGV.wall_cyl) {
+	wall_cyl = CFGV.wall_cyl;
+	wall_cyl_cent_x = CFGV.wall_cyl_cent_x;
+	wall_cyl_cent_y = CFGV.wall_cyl_cent_y;
+	wall_cyl_rad = CFGV.wall_cyl_rad;
+	    
+	}
     }
 
 };
 
 
 private:
+};
+
+// updates the total force by an wall edge and the signed distance from wall
+// edge dir: 0 for x, 1 for y, 2 for z (direction in which wall contact force
+// will act)
+template <unsigned dim>
+// void wall_side_force_update(double dist, Contact CN, unsigned dir,
+// Matrix<double, 1, dim> vel_i, double rho, Matrix<double, 1, dim>
+// &f_toupdate_i)
+// wall_cyl_side_force_update<dim>(dist_from_cyl_wall, CN, cyl_inward_normal_x, cyl_inward_normal_y, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_r, Wall.reaction_r);
+void wall_cyl_side_force_update(double dist, Contact CN, double cyl_inward_normal_x, double cyl_inward_normal_y,
+                            Matrix<double, 1, dim> vel_i, double vol_i, double rho,
+                            Matrix<double, 1, dim> &f_toupdate_i, double dt, double wall_side_speed, Matrix<double, 1, dim> &wall_reaction_force) {
+
+  if (abs(dist) <= CN.contact_rad) {
+    // auto ca = segment_mass(CN.contact_rad, abs(dist));
+    auto ca = segment_mass<dim>(CN.contact_rad, abs(dist));
+    // centroid = ca[0];
+    // Area = ca[1];
+
+    // std::cout << "here" << std::endl;
+    auto contact_rad_contrib = (CN.contact_rad - ca[0]);
+    auto positive_contact_rad_contrib =
+        (contact_rad_contrib > 0 ? contact_rad_contrib : 0);
+
+    auto this_contact_force =
+        (CN.normal_stiffness * positive_contact_rad_contrib * ca[1]);
+
+    // y-value of contact force, for wall_bottom
+    // combined_contact_force[0](dir) += this_contact_force;
+    // double c_sign = (dist > 0 ? 1 : -1);
+    // double c_sign = (dist > 0 ? 1 : -1);
+    double c_sign = 1;
+
+    f_toupdate_i(0) += (c_sign * this_contact_force * cyl_inward_normal_x);
+    f_toupdate_i(1) += (c_sign * this_contact_force * cyl_inward_normal_y);
+    // get the Force (not density) on the wall point w:
+    // F(w) = \sum_{x} K_n(R_c - |d(x)|) V(w)V(x), where $x$ is particle node
+    // Here, this_contact_force = K_n(R_c - |d(x)|) V(w). So, we just multiply V(x)
+    wall_reaction_force(0) -= (vol_i * c_sign * this_contact_force * cyl_inward_normal_x);
+    wall_reaction_force(1) -= (vol_i * c_sign * this_contact_force * cyl_inward_normal_y);
+
+    // compute the relative velocity from the speed of wall boundary
+    auto rel_vel_i = vel_i;
+    // rel_vel_i[dir] -= Wall.wall_side_speed;
+    
+    double rel_vel_normal_proj = rel_vel_i[0] * cyl_inward_normal_x + rel_vel_i[1] * cyl_inward_normal_y;
+    // rel_vel_normal_proj -= wall_side_speed;
+
+    if (CN.allow_friction) {
+      // Friction force
+      //
+      if (dim == 2) {
+	  // not implemented
+        // // tangential axis relative to dir, i.e. 0 if 1, 1 if 0
+        // auto dir_tang = (dir + 1) % 2;
+        //
+        // // What if the tangential velocity component is zero?
+        // if (abs(rel_vel_i(dir_tang)) > 0) {
+        //   double velocity_tangential_sign = (rel_vel_i(dir_tang) > 0 ? 1 : -1);
+        //   // Debug
+        //   double friction_force = (-CN.friction_coefficient) *
+        //                           abs(this_contact_force) *
+        //                           velocity_tangential_sign;
+	//   // modification of friction for small velocity
+        //   if (abs(rel_vel_i(dir_tang)) <
+        //       CN.friction_coefficient * abs(this_contact_force) * dt / rho) {
+        //     // std::cout << "below threshold" << std::endl;
+        //     // Correct version
+        //     friction_force = -rel_vel_i(dir_tang) * rho / dt;
+        //
+        //   }
+        //   // friction_force = (- CN.friction_coefficient) *
+        //   // abs(this_contact_force) * velocity_tangential_sign;
+        //
+        //   // x-value of the contact force
+        //   // combined_contact_force[i](0) += friction_force;
+        //   f_toupdate_i((dir + 1) % 2) += friction_force;
+	//   // get the force density
+        //   wall_reaction_force((dir + 1) % 2) -= (vol_i * friction_force);
+        // }
+      } else {
+	  // Not implemented
+        // // dim 3
+        // // two components of perpendicular to wall edge direction
+        // unsigned dir_tang_1 = (dir + 1) % 3;
+        // unsigned dir_tang_2 = (dir + 2) % 3;
+        //
+	// // projection of velocity to the tangential direction (i.e. normal to wall)
+        // auto vel_proj_1 = rel_vel_i(dir_tang_1);
+        // auto vel_proj_2 = rel_vel_i(dir_tang_2);
+        // auto vel_proj_norm = sqrt(pow(vel_proj_1, 2) + pow(vel_proj_2, 2));
+        //
+        // // What if the norm is zero?
+        // if (vel_proj_norm > 0) {
+        //   auto unit_comp_1 = vel_proj_1 / vel_proj_norm;
+        //   auto unit_comp_2 = vel_proj_2 / vel_proj_norm;
+        //
+        //   double friction_force_1 = (-CN.friction_coefficient) *
+        //                             abs(this_contact_force) * unit_comp_1;
+        //   double friction_force_2 = (-CN.friction_coefficient) *
+        //                             abs(this_contact_force) * unit_comp_2;
+        //
+        //     //f_friction = -CN.friction_coefficient * contact_force_norm *
+        //                  //rel_v_tangential_unit;
+	//  //// Correction for small velocity
+	//   if (vel_proj_norm < CN.friction_coefficient * abs(this_contact_force) * dt /rho) {
+	//       friction_force_1 = -vel_proj_norm/rho/dt * unit_comp_1;
+	//       friction_force_2 = -vel_proj_norm/rho/dt * unit_comp_2;
+	//   }
+        //
+        //   // x-value of the contact force
+        //   // combined_contact_force[i](0) += friction_force;
+        //   f_toupdate_i(dir_tang_1) += friction_force_1;
+        //   f_toupdate_i(dir_tang_2) += friction_force_2;
+        //
+	//   // multiply by volume to get force from force density
+        //   wall_reaction_force(dir_tang_1) -= (vol_i * friction_force_1);
+        //   wall_reaction_force(dir_tang_2) -= (vol_i * friction_force_2);
+        // }
+      }
+    }
+
+    if (CN.allow_damping) {
+      // Damping force
+      auto damping_coefficient =
+	  2 * CN.damping_ratio * sqrt(CN.normal_stiffness * rho) *
+	  sqrt(abs(ca[1])); // area is occasionally -ve for very small values
+			    //
+      // double damping_force = (-damping_coefficient) * rel_vel_i(dir);
+      double damping_force = (-damping_coefficient) * rel_vel_normal_proj;
+      // y-value of the contact force, for wall_bottom
+      // combined_contact_force[i](1) += total_damping_force;
+      //
+      // f_toupdate_i(dir) += damping_force;
+      f_toupdate_i(0) += damping_force * cyl_inward_normal_x;
+      f_toupdate_i(1) += damping_force * cyl_inward_normal_y;
+
+    // multiply by volume to get force from force density
+      // wall_reaction_force(dir) -= (vol_i * damping_force);
+      wall_reaction_force(0) -= (vol_i * damping_force * cyl_inward_normal_x) ;
+      wall_reaction_force(1) -= (vol_i * damping_force * cyl_inward_normal_y) ;
+    }
+  }
 };
 
 // updates the total force by an wall edge and the signed distance from wall
@@ -1092,32 +1254,44 @@ void update_wall_contact_force_by_boundary(
       //std::cout << Wall.get_reaction() << std::endl;
       // double wall side interaction
     } else {
-      // double y_dist_from_bottom = P_C.CurrPos[i](1) - Wall.bottom;
-      // double x_dist_from_left = P_C.CurrPos[i](0) - Wall.left;
-      // double y_dist_from_top =   P_C.CurrPos[i](1) - Wall.top;
-      // double x_dist_from_right = P_C.CurrPos[i](0) - Wall.right;
+	  // these are signed distances
+	  double dist_from_x_min = P_C.CurrPos[i](0) - Wall.x_min;
+	  double dist_from_y_min = P_C.CurrPos[i](1) - Wall.y_min;
+	  double dist_from_z_min = P_C.CurrPos[i](2) - Wall.z_min;
+	  double dist_from_x_max = P_C.CurrPos[i](0) - Wall.x_max;
+	  double dist_from_y_max = P_C.CurrPos[i](1) - Wall.y_max;
+	  double dist_from_z_max = P_C.CurrPos[i](2) - Wall.z_max;
 
-      // these are signed distances
-      double dist_from_x_min = P_C.CurrPos[i](0) - Wall.x_min;
-      double dist_from_y_min = P_C.CurrPos[i](1) - Wall.y_min;
-      double dist_from_z_min = P_C.CurrPos[i](2) - Wall.z_min;
-      double dist_from_x_max = P_C.CurrPos[i](0) - Wall.x_max;
-      double dist_from_y_max = P_C.CurrPos[i](1) - Wall.y_max;
-      double dist_from_z_max = P_C.CurrPos[i](2) - Wall.z_max;
 
-      // single side interaction
-      wall_side_force_update<dim>(dist_from_x_min, CN, 0, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_x_min, Wall.reaction_x_min);
-      wall_side_force_update<dim>(dist_from_x_max, CN, 0, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_x_max, Wall.reaction_x_max);
-      wall_side_force_update<dim>(dist_from_y_min, CN, 1, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_y_min, Wall.reaction_y_min);
-      wall_side_force_update<dim>(dist_from_y_max, CN, 1, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_y_max, Wall.reaction_y_max);
-      wall_side_force_update<dim>(dist_from_z_min, CN, 2, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_z_min, Wall.reaction_z_min);
-      wall_side_force_update<dim>(dist_from_z_max, CN, 2, P_C.vel[i], P_C.vol[i], P_C.rho,
-                                  giant_f[i+i_starting_index], dt, Wall.speed_z_max, Wall.reaction_z_max);
+	  wall_side_force_update<dim>(dist_from_z_min, CN, 2, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_z_min, Wall.reaction_z_min);
+	  wall_side_force_update<dim>(dist_from_z_max, CN, 2, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_z_max, Wall.reaction_z_max);
+
+	if (Wall.wall_cyl) {
+	  // cylindrical wall
+	  double dist_from_cyl_cent_x = Wall.wall_cyl_cent_x - P_C.CurrPos[i](0);
+	  double dist_from_cyl_cent_y = Wall.wall_cyl_cent_y - P_C.CurrPos[i](1) ;
+
+	  double dist_from_cyl_cent = pow(pow(dist_from_cyl_cent_x, 2) + pow(dist_from_cyl_cent_y, 2), 0.5);
+	  double dist_from_cyl_wall = dist_from_cyl_cent - Wall.wall_cyl_rad;
+
+	  double cyl_inward_normal_x = (dist_from_cyl_cent > 0 ? dist_from_cyl_cent_x/dist_from_cyl_cent : 0);
+	  double cyl_inward_normal_y = (dist_from_cyl_cent > 0 ? dist_from_cyl_cent_y/dist_from_cyl_cent : 0);
+
+// void wall_side_force_update(double dist, Contact CN, unsigned dir,
+//                             Matrix<double, 1, dim> vel_i, double vol_i, double rho,
+//                             Matrix<double, 1, dim> &f_toupdate_i, double dt, double wall_side_speed, Matrix<double, 1, dim> &wall_reaction_force) {
+	  wall_cyl_side_force_update<dim>(dist_from_cyl_wall, CN, cyl_inward_normal_x, cyl_inward_normal_y, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, 0.0, Wall.reaction_r);
+
+	} else {
+	  // single side interaction
+	  wall_side_force_update<dim>(dist_from_x_min, CN, 0, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_x_min, Wall.reaction_x_min);
+	  wall_side_force_update<dim>(dist_from_x_max, CN, 0, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_x_max, Wall.reaction_x_max);
+
+	  wall_side_force_update<dim>(dist_from_y_min, CN, 1, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_y_min, Wall.reaction_y_min);
+	  wall_side_force_update<dim>(dist_from_y_max, CN, 1, P_C.vel[i], P_C.vol[i], P_C.rho, giant_f[i+i_starting_index], dt, Wall.speed_y_max, Wall.reaction_y_max);
+
+
+	}
     }
   }
   // return combined_contact_force;
