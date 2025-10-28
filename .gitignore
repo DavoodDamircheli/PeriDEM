@@ -15,3 +15,7 @@ localExamOutput/
 *.sif
 *.swp
 *bak*.*bak*
+# editors / ctags
+tags
+.tags
+*.tags
