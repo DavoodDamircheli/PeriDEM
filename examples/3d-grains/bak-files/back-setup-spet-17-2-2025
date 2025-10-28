@@ -1,0 +1,200 @@
+
+import numpy as np
+# import time
+from random import seed
+from random import random
+
+import sys, os
+sys.path.append(os.getcwd())
+
+import shape_dict, material_dict
+# from genmesh import genmesh
+from exp_dict import ShapeList, Wall3d, Contact, Experiment, plot3d_setup, GridDist
+from arrangements import get_incenter_mesh_loc
+
+from shape_params import Param
+import argparse
+# Instantiate the parser
+# import pdb
+# pdb.set_trace()
+
+
+#-------------helper functions-----------------
+
+def max_fit_along(L, gap, spacing):
+    """Max number of points that fit along [0,L] with end-gap and min spacing."""
+    usable = L - 2*gap
+    if usable < 0:
+        return 0
+    # If only one point, it can sit anywhere between the gaps
+    if usable == 0:
+        return 1
+    return int(usable // spacing) + 1
+
+def positions_along(n, L, gap, spacing):
+    """
+    Place n points in [0,L] with endpoints >= gap from walls.
+    - If n == 1: put the point at L/2 (centered between walls), but clamp to [gap, L-gap].
+    - If n > 1: evenly space within [gap, L-gap].
+    """
+    if n <= 0:
+        return np.array([], dtype=float)
+
+    lo, hi = gap, L - gap
+    if hi <= lo:
+        raise ValueError(f"Box length {L} too small for required gap {gap} on both sides.")
+
+    if n == 1:
+        c = 0.5 * L
+        return np.array([min(max(c, lo), hi)], dtype=float)
+
+    return np.linspace(lo, hi, n, dtype=float)
+
+#-------------------------------------
+
+
+
+parser = argparse.ArgumentParser(description='Optional app description')
+
+# Optional argument
+# parser.add_argument('--shape', type=str, help='shape of each particle', default='small_disk')
+parser.add_argument('--particle_rad', type=float, help='radius of each particle', default=8e-3)
+parser.add_argument('--L', type=float, help='half-length of container', default=100e-3)
+parser.add_argument('--wallh_ratio', type=float, help='half-length of wall height vs wall width', default=2)
+parser.add_argument('--nx', type=int, help='number of particles in x dir', default=10)
+parser.add_argument('--ny', type=int, help='number of particles in y dir', default=10)
+parser.add_argument('--vel_val', type=float, help='initial velocity', default=-20)
+parser.add_argument('--acc_val', type=float, help='initial velocity', default=-10)
+parser.add_argument('--shape', type=str, help='shape of grain', default='grains')
+#parser.add_argument('--msh_path', type=str, help='shape of grain', default='/home/davood/projects/beta_perigrain_v2/grain-data/test5grains')
+parser.add_argument('--msh_path', type=str, help='shape of grain', default='/home/davood/projects/beta_perigrain_v2/grain-data')
+
+parser.add_argument('--G_scale', type=float, help='shear modulus scaling', default=0.5)
+parser.add_argument('--Gnot_scale', type=float, help='shear modulus scaling', default=1e-4)
+parser.add_argument('--K_scale', type=float, help='bulk modulus scaling', default=0.5)
+parser.add_argument('--rho_scale', type=float, help='density scaling', default=1)
+
+parser.add_argument('--meshsize_factor', type=float, help='meshsize factor compared to radius', default=50)
+parser.add_argument('--delta_factor', type=float, help='delta factor compared to radius', default=3)
+parser.add_argument('--contact_rad_factor', type=float, help='contact radius factor compared to radius', default=5)
+
+parser.add_argument('--setup_file', type=str, help='output setup directory', default='data/hdf5/all.h5')
+parser.add_argument('--plot', action='store_true', help='whether to show plot or not')
+# finish parsing
+args = parser.parse_args()
+args.plot=1
+print('plot', args.plot)
+print('saving experiment setup to', args.setup_file)
+
+""" Two particles colliding in 3D
+"""
+
+rad = 600e-6        # 600 µm  
+#n_x, n_y, n_z = (4, 4, 4)
+n_x, n_y, n_z = (1,1,2)
+mf = args.meshsize_factor
+mf = 20
+
+count = 2
+
+# --- sizes & spacing (unchanged parts above) ---
+delta = rad/args.delta_factor
+meshsize = rad/mf
+contact_radius = rad/args.contact_rad_factor
+gap = rad + contact_radius                 # margin to each wall and half the center spacing
+min_center_spacing = 2.0 * (rad + contact_radius)  # no-overlap spacing
+
+
+#--------------
+
+Lx = 4e-3
+Ly = 4e-3
+Lz = 5e-3
+
+
+# --- capacity checks before placing points ---
+cap_x = max_fit_along(Lx, gap, min_center_spacing) if n_x > 1 else (1 if Lx > 2*gap else 0)
+cap_y = max_fit_along(Ly, gap, min_center_spacing) if n_y > 1 else (1 if Ly > 2*gap else 0)
+cap_z = max_fit_along(Lz, gap, min_center_spacing) if n_z > 1 else (1 if Lz > 2*gap else 0)
+
+if (n_x > cap_x) or (n_y > cap_y) or (n_z > cap_z):
+    raise ValueError(
+        "Requested grid does not fit without overlaps.\n"
+        f"  Requested: n_x={n_x}, n_y={n_y}, n_z={n_z}\n"
+        f"  Max that fit: n_x≤{cap_x}, n_y≤{cap_y}, n_z≤{cap_z}\n"
+        f"  Try increasing Lx,Ly,Lz or decreasing n_* or rad/contact_radius."
+    )
+
+# --- generate positions (guaranteed inside and non-overlapping) ---
+x = positions_along(n_x, Lx, gap, min_center_spacing)
+y = positions_along(n_y, Ly, gap, min_center_spacing)
+z = positions_along(n_z, Lz, gap, min_center_spacing)
+
+X, Y, Z = np.meshgrid(x, y, z, indexing="xy")
+xf, yf, zf = X.ravel(), Y.ravel(), Z.ravel()
+shifts = np.c_[xf, yf, zf]
+
+# --- shapes/material as usual ---
+SL = ShapeList()
+material = material_dict.peridem_3d(delta)
+material.print()
+
+# --- axis-aligned walls on [0,Lx]×[0,Ly]×[0,Lz] ---
+x_min, y_min, z_min = 0.0, 0.0, 0.0
+x_max, y_max, z_max = Lx, Ly, Lz
+wall = Wall3d(1, x_min, y_min, z_min, x_max, y_max, z_max)
+
+# (Optional) quick sanity prints
+print(f"Placed {len(shifts)} grains with min center spacing ≥ {min_center_spacing:.4e}")
+print(f"x span: [{x.min():.4e}, {x.max():.4e}] of [0, {Lx:.4e}]")
+print(f"y span: [{y.min():.4e}, {y.max():.4e}] of [0, {Ly:.4e}]")
+print(f"z span: [{z.min():.4e}, {z.max():.4e}] of [0, {Lz:.4e}]")
+
+
+#------------------max count is 400--------------
+#count = n_x*n_y*n_z
+if args.shape == 'grains':
+    for i in range(1,count+1):
+        print(i)
+        ind = int(i)
+        msh_file = args.msh_path + '/mesh_' + str(ind) + '.msh'
+        shape = shape_dict.Shape(P=None, nonconvex_interceptor=None, msh_file=msh_file, scale_mesh_to=rad, centroid_origin=True)
+        SL.append(shape=shape, count=1, meshsize=meshsize, material=material,plot_shape=False)
+else:
+    SL.append(shape=shape, count=count, meshsize=meshsize, material=material,plot_shape=False)
+
+
+
+particles = SL.generate_mesh(dimension = 3, contact_radius=contact_radius, plot_node_text=False, plot_shape=True, plot_mesh=True)
+
+a1 = list(range(len(particles)))
+a2= len(particles)
+print('a1 is', a1) 
+print('a2 is', a2) 
+
+for i in range(count):
+    # particles[0][i].scale(rad/1e-3)
+    if args.shape == 'grains':
+        part = particles[i][0]
+    else:
+        part = particles[0][i]
+    part.shift(shifts[i])
+
+normal_stiffness = material_dict.peridem_3d(contact_radius).cnot / contact_radius
+
+
+damping_ratio = 0.8
+friction_coefficient = 0.8
+
+contact  = Contact(contact_radius, normal_stiffness, damping_ratio, friction_coefficient)
+args.plot=1
+if args.plot:
+    plot3d_setup(particles, dotsize=15, wall=wall, show_particle_index=True, delta=delta, contact_radius=contact_radius, save_filename='setup.png')
+
+exp = Experiment(particles, wall, contact)
+
+#######################################################################
+
+# save the data
+print('saving experiment setup to', args.setup_file)
+exp.save(args.setup_file)

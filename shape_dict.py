@@ -88,7 +88,7 @@ class NonConvexInterceptor(object):
         self.ext_bdry = ext_bdry
         self.unit_normal = unit_normal
         self.l_dir = l_dir
-
+        
         self.use = 'all'
         self.proj_3d = 'xy'
         
@@ -103,6 +103,8 @@ class NonConvexInterceptor(object):
             return self.obt_bisec
         elif (self.use == 'bdry'):
             return self.ext_bdry
+        elif (self.use == 'edges'):
+            return self.obt_bisec
         else:
             print('Wrong nonconvex_intercetor.use string given.')
 
@@ -1336,7 +1338,7 @@ def hollow_sphere(R=200e-3, r=100e-3, meshsize=10e-3, meshdata_dir='meshdata', f
     #lc = meshsize  # Adjust this value to make the mesh finer or coarser
 
     # Add the outer sphere
-    outer_sphere = gmsh.model.occ.addSphere(cx, cy, cz, R)
+    outer_sphere = gmsh.model.occ.addsphere(cx, cy, cz, r)
 
     # Add the inner sphere
     inner_sphere = gmsh.model.occ.addSphere(cx, cy, cz, r)
@@ -1375,6 +1377,81 @@ def hollow_sphere(R=200e-3, r=100e-3, meshsize=10e-3, meshdata_dir='meshdata', f
     print(nonconvex_vertex)         
     nci.use = 'bisec'
     return Shape(P=None,nonconvex_interceptor=nci, msh_file=msh_file)
+def sphere(rad=200e-3, meshsize=10e-3, meshdata_dir='meshdata', filename_suffix='00'):
+    msh_file = meshdata_dir+'/sphere_'+str(filename_suffix)+'.msh'
+    # Initialize Gmsh
+    gmsh.initialize()
+
+    # Create a new model
+    #gmsh.model.add("Sphere with Hollow Sphere")
+    myOrigx, myOrigy, myOrigz = 0,0,0
+    cx = -myOrigx
+    cy = -myOrigy
+    cz = -myOrigz
+    # Parameters for the radii
+    # R   : Outer sphere radius
+    # r   : Inner sphere radius
+
+    # Global characteristic length for finer mesh
+    #lc = meshsize  # Adjust this value to make the mesh finer or coarser
+
+    # Add the outer sphere
+    gmsh.model.occ.addSphere(cx, cy, cz, rad)
+
+    # Add the inner sphere
+
+    # Perform a boolean difference to subtract the inner sphere from the outer sphere
+
+    # Synchronize the model
+    gmsh.model.occ.synchronize()
+
+    # Set the mesh size for the entire model
+    #gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
+
+    
+
+    gmsh.option.setNumber("Mesh.Algorithm", 6);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", meshsize);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", meshsize);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 1);
+    gmsh.option.setNumber("General.Verbosity", 0);
+
+    gmsh.model.occ.synchronize() # obligatory before generating the mesh
+    # Generate the mesh
+    gmsh.model.mesh.generate(3)
+    # Optionally, save the mesh to a file
+    
+    gmsh.write(msh_file) # save to file
+   
+    # Finalize Gmsh
+    gmsh.finalize()
+    return Shape(P=None,nonconvex_interceptor=None, msh_file=msh_file)
+
+
+
+def _sphere_3d(rad=1e-3, meshsize=1e-3, meshdata_dir='meshdata', filename_suffix='00'):
+
+    msh_file = meshdata_dir+'/sphere_'+str(filename_suffix)+'.msh'
+    gmsh.initialize()
+
+    ## See: https://gmsh.info/doc/texinfo/gmsh.html#index-gmsh_002fmodel_002focc_002faddSphere
+    ## for more gmsh commands  and examples with python
+    gmsh.model.occ.addSphere(0, 0, 0, rad)
+
+    gmsh.option.setNumber("Mesh.Algorithm", 6);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", meshsize);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", meshsize);
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 1);
+    gmsh.option.setNumber("General.Verbosity", 0);
+
+
+    gmsh.model.occ.synchronize() # obligatory before generating the mesh
+    gmsh.model.mesh.generate(3) # generate a 3D mesh...
+    gmsh.write(msh_file) # save to file
+    gmsh.finalize() # close gmsh, as opposed to initialize()
+
+    return Shape(P=None, nonconvex_interceptor=None, msh_file=msh_file)
+
 
 #-----------------------------------------------------muri 2025--------------------------
 #----------------------------------------------------------------------------------------
@@ -1415,6 +1492,35 @@ def plate_2d_notch_2(L=150, meshsize=0.2e-3, meshdata_dir='meshdata', filename_s
     p[9] = gmsh.model.geo.addPoint(top_x - notch_width / 2, plate_height, 0, meshsize)
     p[10] = gmsh.model.geo.addPoint(0, plate_height, 0, meshsize)
 
+    
+    #----------------------------------------------
+    # After you’ve created p[2], p[3], p[4], p[7], p[8], p[9]
+    # top_edges = np.array([
+    #     [ [top_x + notch_width/2, plate_height], [top_x, top_y] ],   # p7–p8
+    #     [ [top_x, top_y], [top_x - notch_width/2, plate_height] ]    # p8–p9
+    # ], dtype=float)
+    #
+    # bot_edges = np.array([
+    #     [ [bottom_x - notch_width/2, 0.0], [bottom_x, bottom_y] ],   # p2–p3
+    #     [ [bottom_x, bottom_y], [bottom_x + notch_width/2, 0.0] ]    # p3–p4
+    # ], dtype=float)
+    #
+    # nci = NonConvexInterceptor(
+    #     obt_bisec=np.vstack([top_edges, bot_edges]),  # shape (4, 2, 2)
+    #      ext_bdry=None, unit_normal=None, l_dir=None
+    # )
+    # nci.use = 'edges'   # up to you; just a hint flag
+    #self.interceptor = nci  # make sure your object saves it here
+     
+
+    # nci = NonConvexInterceptor(obt_bisec=np.array(nonconvex_vertex), ext_bdry=None, unit_normal=None, l_dir=None)
+
+
+
+    #----------------------------------------------
+
+
+
     lines = [
         gmsh.model.geo.addLine(p[1], p[2]),
         gmsh.model.geo.addLine(p[2], p[3]),
@@ -1443,16 +1549,16 @@ def plate_2d_notch_2(L=150, meshsize=0.2e-3, meshdata_dir='meshdata', filename_s
     A1 = [top_x, top_y]
     B1 = [top_x,plate_height]
 
-    
+
     A2 = [bottom_x, bottom_y]
     B2 = [bottom_x,0]
-    
+
     nonconvex_vertex =[A1,B1,A2,B2]
-    
+
     nci = NonConvexInterceptor(obt_bisec=np.array(nonconvex_vertex), ext_bdry=None, unit_normal=None, l_dir=None)
 
 
-    
+
     nci.use = 'bisec'
     return Shape(P=None,nonconvex_interceptor=nci, msh_file=msh_file)
 #----------------------------------------------------------------------------------------------------------
@@ -1519,6 +1625,11 @@ def plate_2d_notch_1(L=150, meshsize=0.2e-3, meshdata_dir='meshdata', filename_s
     nci.use = 'bisec'
     return Shape(P=None,nonconvex_interceptor=nci, msh_file=msh_file)
 
+
+
+
+
+
 #----------------------------------------------------------------------------------------------------------
 
 def plate_2d_circle_void(L=150, r=10 , cx=None, cy=None,  meshsize=0.2e-3, meshdata_dir='meshdata', filename_suffix='00'):
@@ -1577,10 +1688,167 @@ def plate_2d_circle_void(L=150, r=10 , cx=None, cy=None,  meshsize=0.2e-3, meshd
     return Shape(P=None,nonconvex_interceptor=nci, msh_file=msh_file)
 
 
+#----------------------------------------------------------
+
+
+# Assuming these exist in your project (same as your example)
+# from your_project import Shape, NonConvexInterceptor
+
+def plate_2d_vnotch_circle_void(
+    L=150.0,
+    r=10.0,
+    cx=None,
+    cy=None,
+    notch_width=3.0,
+    notch_depth=65.0,
+    notch_offset_left=53.0,
+    meshsize=0.2e-3,
+    meshdata_dir='meshdata',
+    filename_suffix='00'
+):
+    """
+    Create a 2D square plate (0..L x 0..L) with:
+      - a circular hole centered at (cx, cy) [defaults to (L/2, L/2)], radius r
+      - a V-shaped notch on the top edge, located near the left side
+
+    Notch geometry (on y = L):
+      M1 = (notch_offset_left, L)
+      M2 = (notch_offset_left + notch_width, L)
+      A1 = ( (M1.x + M2.x)/2, L - notch_depth )  # apex
+      B1 = ( (M1.x + M2.x)/2, L )                # mouth midpoint
+
+    Parameters
+    ----------
+    L : float
+        Plate side length.
+    r : float
+        Radius of the circular hole.
+    cx, cy : float or None
+        Center of circular hole; defaults to plate center if None.
+    notch_width : float
+        Mouth width of the V-notch (horizontal distance between M1 and M2).
+    notch_depth : float
+        Vertical depth from the top edge (y=L) down to the apex A1.
+    notch_offset_left : float
+        Horizontal offset from the left edge to the left mouth point M1.
+    meshsize : float
+        Target mesh size.
+    meshdata_dir : str
+        Directory for output mesh files.
+    filename_suffix : str
+        Suffix to append to the output filenames.
+
+    Returns
+    -------
+    shape : Shape
+        Your project Shape object with NonConvexInterceptor set at the apex.
+    key_points : dict
+        Dictionary with coordinates for A1 (apex), B1 (mouth midpoint),
+        and also M1, M2 for convenience.
+    """
+    if cx is None:
+        cx = L / 2.0
+    if cy is None:
+        cy = L / 2.0
+
+    # --- Notch key points on the top edge (y = L)
+    M1 = (float(notch_offset_left), float(L))
+    M2 = (float(notch_offset_left + notch_width), float(L))
+    A1 = ((M1[0] + M2[0]) * 0.5, float(L - notch_depth))  # apex
+    B1 = ((M1[0] + M2[0]) * 0.5, float(L))                # mouth midpoint
+
+    # Safety checks (no negative depth, within plate, etc.)
+    if not (0.0 <= M1[0] <= L and 0.0 <= M2[0] <= L):
+        raise ValueError("Notch mouth lies outside the plate horizontally. "
+                         "Adjust 'notch_offset_left' and/or 'notch_width'.")
+    if not (0.0 <= A1[1] <= L):
+        raise ValueError("A1 apex lies outside the plate vertically. "
+                         "Reduce 'notch_depth' or increase 'L'.")
+
+    msh_file = 'meshdata/plate2s_vnotch_circle_void.msh'
+  
+
+    gmsh.initialize()
+    gmsh.model.add("plate2d_vnotch_circle")
+
+    # Plate
+    rect = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, float(L), float(L))
+
+    # Circle hole
+    circle = gmsh.model.occ.addDisk(float(cx), float(cy), 0.0, float(r), float(r))
+
+    # V-notch triangle surface: M1--A1--M2
+    # Create points
+    pM1 = gmsh.model.occ.addPoint(M1[0], M1[1], 0.0)
+    pM2 = gmsh.model.occ.addPoint(M2[0], M2[1], 0.0)
+    pA1 = gmsh.model.occ.addPoint(A1[0], A1[1], 0.0)
+
+    # Create lines for the triangle boundary
+    l_M1A1 = gmsh.model.occ.addLine(pM1, pA1)
+    l_A1M2 = gmsh.model.occ.addLine(pA1, pM2)
+    l_M2M1 = gmsh.model.occ.addLine(pM2, pM1)
+
+    tri_loop = gmsh.model.occ.addCurveLoop([l_M1A1, l_A1M2, l_M2M1])
+    tri_surface = gmsh.model.occ.addPlaneSurface([tri_loop])
+
+    # Cut circle and V-notch from the plate
+    # (2, ...) denotes 2D surfaces in OpenCASCADE
+    cut_res, _ = gmsh.model.occ.cut(
+        objectDimTags=[(2, rect)],
+        toolDimTags=[(2, circle), (2, tri_surface)],
+        removeObject=True,
+        removeTool=True
+    )
+
+    gmsh.model.occ.synchronize()
+
+    # Mesh sizes (global + local refinement near the notch apex/mouth if desired)
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), float(meshsize))
+    # Optionally refine a bit around the notch for better resolution:
+    gmsh.model.mesh.setSize([(0, pA1), (0, pM1), (0, pM2)], float(meshsize) * 0.5)
+
+    gmsh.model.mesh.generate(2)
+    gmsh.write(msh_file)
+    gmsh.finalize()
+
+    # Non-convex interceptor set at the notch apex (your project convention)
+    nonconvex_vertex = [A1[0], A1[1], 0.0]  # apex coordinates
+    nci = NonConvexInterceptor(
+        obt_bisec=np.array(nonconvex_vertex),
+        ext_bdry=None,
+        unit_normal=None,
+        l_dir=None
+    )
+    nci.use = 'bisec'
+
+    shape = Shape(P=None, nonconvex_interceptor=nci, msh_file=msh_file)
+
+    key_points = {
+        "A1": A1,   # apex of V-notch
+        "B1": B1,   # midpoint of mouth
+        "M1": M1,   # left mouth point
+        "M2": M2    # right mouth point
+    }
+
+    # If your Shape class supports attaching metadata, you could also do:
+    # shape.key_points = key_points
+
+    #key_points_2=[r,cx,cy,M1,M2,A1] 
+    key_points_2=[r,cx,cy,A1,B1] 
+    nci = NonConvexInterceptor(obt_bisec=np.array(key_points_2,dtype=object), ext_bdry=None, unit_normal=None, l_dir=None)
+
+     
+    nci.use = 'bisec'
+    return Shape(P=None,nonconvex_interceptor=nci, msh_file=msh_file)
+
+
+
+
+#----------------------------------------------------------
 
 def rectangle_2d(lx=1.0, ly=1.0, meshsize=0.1, meshdata_dir='meshdata', filename_suffix='00'):
     """
-    Create a 2D rectangle of size lx × ly using Gmsh (OpenCASCADE kernel).
+    Create a 3D rectangle of size lx × ly using Gmsh (OpenCASCADE kernel).
 
     Parameters:
     - lx, ly: dimensions of the rectangle
@@ -2603,28 +2871,71 @@ def cube_3d(lx=1e-3, ly=1e-3,lz=1e-3,meshsize=1e-3, meshdata_dir='meshdata', fil
 
     return Shape(P=None,nonconvex_interceptor=None, msh_file=msh_file)
 
-def sphere_3d(rad=1e-3, meshsize=1e-3, meshdata_dir='meshdata', filename_suffix='00'):
+
+def _sphere_3d(rad=1e-3, meshsize=1e-3, meshdata_dir='meshdata', filename_suffix='00'):
+
 
     msh_file = meshdata_dir+'/sphere_'+str(filename_suffix)+'.msh'
     gmsh.initialize()
+    try:
+        # --- Geometry: just the sphere (no point at center) ---
+        # returns (volume_tag), we’ll keep tag=1
+        vol = gmsh.model.occ.addSphere(0.0, 0.0, 0.0, rad, tag=1)
 
-    ## See: https://gmsh.info/doc/texinfo/gmsh.html#index-gmsh_002fmodel_002focc_002faddSphere
-    ## for more gmsh commands  and examples with python
-    gmsh.model.occ.addPoint(0, 0, 0, meshsize, 1)
-    gmsh.model.occ.addSphere(0, 0, 0, rad, 1)
+        # OCC fixes to avoid tiny slivers/faces/edges created by CAD kernel
+        gmsh.option.setNumber("Geometry.OCCFixSmallEdges", 1)
+        gmsh.option.setNumber("Geometry.OCCFixSmallFaces", 1)
+        gmsh.option.setNumber("Geometry.OCCSewFaces", 1)
 
-    gmsh.option.setNumber("Mesh.Algorithm", 6);
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", meshsize);
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", meshsize);
-    gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 0.5);
-    gmsh.option.setNumber("General.Verbosity", 0);
+        gmsh.model.occ.synchronize()
+        gmsh.model.occ.removeAllDuplicates()
+        gmsh.model.occ.synchronize()
 
-    gmsh.model.occ.synchronize() # obligatory before generating the mesh
-    gmsh.model.mesh.generate(3) # generate a 3D mesh...
-    gmsh.write(msh_file) # save to file
-    gmsh.finalize() # close gmsh, as opposed to initialize()
+        # --- Mesh algorithms & size control ---
+        # 2D surface meshing Frontal-Delaunay; 3D HXT (good quality & speed)
+        gmsh.option.setNumber("Mesh.Algorithm", 6)     # 2D
+        gmsh.option.setNumber("Mesh.Algorithm3D", 10)  # 3D
 
+        # Make mesh size uniform: ignore points/curvature sizing
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", meshsize)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", meshsize)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", 1.0)
+
+        # Optional: keep the number of elements around great circles bounded
+        # (helps avoid “too many” segments near poles)
+        gmsh.option.setNumber("Mesh.MinimumElementsPerTwoPi", 12)
+
+        # Provide a constant background field = meshsize (most robust way)
+        f = gmsh.model.mesh.field
+        fid = f.add("Constant")
+        f.setNumber(fid, "LC", meshsize)
+        f.setAsBackgroundMesh(fid)
+
+        # Some cleanup/quality options
+        gmsh.option.setNumber("Mesh.Optimize", 1)
+        gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+        gmsh.option.setNumber("Mesh.Smoothing", 10)
+        gmsh.option.setNumber("General.Verbosity", 0)
+
+        # It can help to set surface sizes too (belt-and-suspenders):
+        # get boundary surfaces of the volume and apply mesh size
+        surfs = gmsh.model.getBoundary([(3, vol)], oriented=False, recursive=False)
+        gmsh.model.mesh.setSize(surfs, meshsize)
+
+        # --- Generate surface then volume mesh ---
+        gmsh.model.mesh.generate(2)
+        gmsh.model.mesh.generate(3)
+
+        gmsh.write(msh_file)
+
+    finally:
+        gmsh.finalize()
+
+    # Return a Shape pointing to this .msh (no scaling needed; we built exact radius)
     return Shape(P=None, nonconvex_interceptor=None, msh_file=msh_file)
+
 
 def box_extrude_3d(xyz=[0,0,0], L1=1e-3, L2=1e-3, L3=1e-3, meshsize=0.5e-3, meshdata_dir='meshdata', filename_suffix='00'):
 
