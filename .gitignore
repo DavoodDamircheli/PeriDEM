@@ -10,7 +10,7 @@ results/
 *.btr
 *.h5
 examples_output/
-a_pychache__
+__pychache__
 localExamOutput/
 *.sif
 *.swp
@@ -19,3 +19,21 @@ localExamOutput/
 tags
 .tags
 *.tags
+
+
+
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/ env/ venv/
+
+# build / C++
+build/ cmake-build*/ dist/ *.o *.a *.so *.dylib
+
+# outputs / big data
+examples_output/
+*.h5
+*.png
+*.vtk
