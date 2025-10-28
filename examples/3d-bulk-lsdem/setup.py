@@ -84,7 +84,7 @@ for ind in ind_range:
 
 # material.print()
 
-particles = SL.generate_mesh(dimension=3, contact_radius=contact_radius, plot_mesh=False, plot_node_text=False, shapes_in_parallel=True, keep_mesh=True)
+particles = SL.generate_mesh(dimension=3, contact_radius=contact_radius, plot_mesh=False, plot_node_text=False, shapes_in_parallel=False, keep_mesh=True, )
 
 # for ind in range(N):
 for i,ind in enumerate(ind_range):

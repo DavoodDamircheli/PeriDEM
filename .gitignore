@@ -37,3 +37,10 @@ examples_output/
 *.h5
 *.png
 *.vtk
+
+env/*
+__pycache__/*
+tags
+*.png
+*.swo
+*.swp

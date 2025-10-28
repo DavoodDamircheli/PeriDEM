@@ -94,6 +94,12 @@ public:
     // wall force
     bool compute_wall_reaction = 0;
 
+    // cylindrical wall
+    bool wall_cyl = 0;
+    double wall_cyl_cent_x = 0;
+    double wall_cyl_cent_y = 0;
+    double wall_cyl_rad = 1.5e-3;
+
     // obtained via command line
     string setup_filename = "data/hdf5/all.h5";
     string output_dir = "output/hdf5/";
@@ -409,6 +415,23 @@ public:
 		else if (name == "speed_wall_z_max") {
 		    speed_wall_z_max = std::stod(value);
 		}
+
+
+
+		else if (name == "wall_cyl") {
+		    wall_cyl = std::stoi(value);
+		}
+		else if (name == "wall_cyl_cent_x") {
+		    wall_cyl_cent_x = std::stod(value);
+		}
+		else if (name == "wall_cyl_cent_y") {
+		    wall_cyl_cent_y = std::stod(value);
+		}
+		else if (name == "wall_cyl_rad") {
+		    wall_cyl_rad = std::stod(value);
+		}
+
+
 
 		else if (name == "gradient_extforce") {
 		    gradient_extforce = std::stoi(value);
