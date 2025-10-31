@@ -795,8 +795,36 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
       Wall.y_max += Wall.speed_y_max * TL.dt;
       Wall.z_max += Wall.speed_z_max * TL.dt;
     }
+    // --- user-set knobs (read from config or set before the loop) ---
 
-    // save
+// --- one-time guard so we only jump once ---
+static bool top_wall_jumped = false;
+
+// --- do the jump exactly at the chosen step ---
+if (dim == 3 && Wall.jump_wall == 1 && !top_wall_jumped && counter == Wall.jump_step) {
+    if (Wall.z_jump >= 0.0) {
+        // absolute placement
+        Wall.z_max = Wall.z_jump;
+    } else {
+        // relative move: distance = speed * (my_time_step) * dt
+        // here 'my_time_step' == jump_move_steps
+        Wall.z_max += Wall.speed_z_max * static_cast<double>(Wall.jump_move_steps) * TL.dt;
+    }
+
+    // optional: stop soon after the jump
+    //if (steps_after_jump > 0) {
+    //    TL.timesteps = std::min(TL.timesteps, TL.step + Wall.steps_after_jump);
+    //}
+
+    top_wall_jumped = true;
+
+    // optional: print for debugging
+    std::cout << "[jump] step=" <<counter 
+              << " new Wall.z_max=" << Wall.z_max << std::endl;
+}
+    
+
+    // // save
     // if (0) {
     if (TL.save_file) {
       // if (TL.save_file) {

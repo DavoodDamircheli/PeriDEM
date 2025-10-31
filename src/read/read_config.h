@@ -99,7 +99,15 @@ public:
     double wall_cyl_cent_x = 0;
     double wall_cyl_cent_y = 0;
     double wall_cyl_rad = 1.5e-3;
-
+    //
+    // wall jump
+  int    jump_wall  = 0;        // 0/1 toggle
+  int    jump_step  = 0;        // step number when jump occurs
+  double z_jump     = 0.0;           // target z position for top wall
+  int    jump_move_steps =0;  // relative movement step count
+  int    steps_after_jump =0; // optional stop-after-jump
+ 
+    
     // obtained via command line
     string setup_filename = "data/hdf5/all.h5";
     string output_dir = "output/hdf5/";
@@ -414,10 +422,22 @@ public:
 		}
 		else if (name == "speed_wall_z_max") {
 		    speed_wall_z_max = std::stod(value);
-		}
-
-
-
+}
+else if (name == "jump_wall") {
+    jump_wall = std::stoi(value);
+}
+else if (name == "jump_step") {
+    jump_step = std::stoi(value);
+}
+else if (name == "z_jump") {
+    z_jump = std::stod(value);
+}
+else if (name == "jump_move_steps") {
+    jump_move_steps = std::stoi(value);
+}
+else if (name == "steps_after_jump") {
+    steps_after_jump = std::stoi(value);
+}
 		else if (name == "wall_cyl") {
 		    wall_cyl = std::stoi(value);
 		}

@@ -222,6 +222,13 @@ public:
     double wall_cyl_cent_y = 0;
     double wall_cyl_rad = 1.5e-3;
 
+   // wall jump
+	int    jump_wall        = 0;   // 0/1 toggle
+	int    jump_step        = 0;   // step number when jump occurs
+	double z_jump           = 0.0; // target z position for top wall
+	int    jump_move_steps  = 0;   // relative movement step count
+	int    steps_after_jump = 0;   // optional stop-after-jump
+
   Matrix<double, 1, dim> reaction_r ; // = Matrix<double, 1, dim>::Zero();
 
   RectWall(bool allow) : allow_wall(allow){};
@@ -385,6 +392,19 @@ void apply_config(ConfigVal CFGV) {
 	wall_cyl_rad = CFGV.wall_cyl_rad;
 	    
 	}
+      if (CFGV.jump_wall) {
+	jump_step = CFGV.jump_step;
+	z_jump = CFGV.z_jump;
+	jump_move_steps = CFGV.jump_move_steps;
+	steps_after_jump = CFGV.steps_after_jump;
+	    
+	}
+
+
+
+
+
+
     }
 
 };
