@@ -79,7 +79,7 @@ gen_setup="yes"
 tstep=5e-4
 Gscale=1.0
 grav=1e4
-base="examples_output/new_setup_ottawa"
+base="examples_output/cylinder_ottawa"
 
 # Get timestamp
 timestamp=$(date +"%Y%m%d-%H%M")
@@ -90,7 +90,7 @@ count=$((count+1))
 
 # Build run name with counter + N + rate + timestamp
 #run_name="run${count}-msh${mf}-stptim${tstep}-Gscale${Gscale}-Grav-${grav}-container_z-${container}-${timestamp}"
-run_name="run${count}-meshsize-10-shape${shape}-tstep-${tstep}"
+run_name="run${count}-meshsize-10-tstep-${tstep}"
 dir="$base/$run_name"
 
 #-------------------------------------------------
@@ -132,7 +132,8 @@ gen_setup(){
     echo "Generating experiment setup"
     echo $path
    echo $dir
-    python3 $path/setup.py --positions_in_mm --pin_to bottom --novis --path "$dir"    >> $logfile
+    #python3 $path/setup.py  --pin_to bottom --novis --path "$dir"    >> $logfile
+    python3 $path/setup.py  --path "$dir"
     cp setup.png $dir/
 }
 
@@ -150,8 +151,13 @@ run()
 	echo $NPROCS
 	mpirun -machinefile $PBS_NODEFILE -np $NPROCS bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
     else
-	echo "On non-hpc with ${non_hpc_cores} cores"
-	mpirun -n ${non_hpc_cores} bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+	#echo "On non-hpc with ${non_hpc_cores} cores"
+	#mpirun -n ${non_hpc_cores} bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+	NP=$(nproc)
+        echo "Running with $NP cores..."
+        #mpirun -n $(nproc)   --oversubscribe bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+        mpirun -n 4    bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+
     fi
 }
 
@@ -207,9 +213,10 @@ gen_vid(){
 
 create_env
 gen_setup
-#run
-#gen_plot
-# extract
+# run
+# gen_plot
+# gen_vid
+# # # extract
 # multiplot
 #
-# gen_vid
+#gen_vid
