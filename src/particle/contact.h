@@ -393,7 +393,8 @@ void apply_config(ConfigVal CFGV) {
 	    
 	}
       if (CFGV.jump_wall) {
-	jump_step = CFGV.jump_step;
+        jump_wall=CFGV.jump_wall;	
+        jump_step = CFGV.jump_step;
 	z_jump = CFGV.z_jump;
 	jump_move_steps = CFGV.jump_move_steps;
 	steps_after_jump = CFGV.steps_after_jump;
