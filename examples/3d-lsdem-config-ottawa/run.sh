@@ -92,7 +92,7 @@ count=$((count+1))
 #run_name="run${count}-msh${mf}-stptim${tstep}-Gscale${Gscale}-Grav-${grav}-container_z-${container}-${timestamp}"
 run_name="run${count}-meshsize-10-tstep-${tstep}"
 dir="$base/$run_name"
-
+#dir="$base/grains-400"
 #-------------------------------------------------
 # create subdirectory
 
@@ -133,7 +133,7 @@ gen_setup(){
     echo $path
    echo $dir
     #python3 $path/setup.py  --pin_to bottom --novis --path "$dir"    >> $logfile
-    python3 $path/setup.py  --path "$dir"
+    python3 $path/setup.py  --path "$dir" --setup_file $dir/setup.h5
     cp setup.png $dir/
 }
 
@@ -155,8 +155,8 @@ run()
 	#mpirun -n ${non_hpc_cores} bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
 	NP=$(nproc)
         echo "Running with $NP cores..."
-        #mpirun -n $(nproc)   --oversubscribe bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
-        mpirun -n 4    bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+        mpirun -n $(nproc)   --oversubscribe bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
+        #mpirun -n 4    bin/simulate3d -c $config -o $dir -i $sfile  >> $logfile
 
     fi
 }
@@ -176,7 +176,9 @@ gen_plot(){
     cmap='Greys'
     # cmap='viridis'
     # python3 plot3d_timestep.py --data_dir $dir --img_dir $dir --setup_file $sfile --dotsize $dotsize --quantity $qq --nocolorbar --colormap $cmap #--plot_bonds --bond_linewidth ${bond_linewidth} --fc $fcval
-    python3 plot3d_timestep.py --all_dir $dir --dotsize $dotsize --alpha $alpha
+    python3 plot3d_timestep.py --all_dir $dir --dotsize 5  --setup_file $sfile
+
+    #python3 plot3d_timestep.py --all_dir $dir --dotsize 5  --setup_file $sfile --quantity force --dotsize 6 --alpha 1.0 --serial
     echo "$dir"
     sxiv $dir/*.png &
 }
@@ -213,9 +215,9 @@ gen_vid(){
 
 create_env
 gen_setup
-# run
-# gen_plot
-# gen_vid
+run
+gen_plot
+# # # # # # # # gen_vid
 # # # extract
 # multiplot
 #

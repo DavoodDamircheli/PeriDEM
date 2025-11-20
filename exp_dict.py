@@ -456,7 +456,6 @@ def segments_intersect(p1, p2, p3, p4, *, inclusive=True, eps=1e-12):
 
 
 
-
 class Particle(object):
     """ A discretized particle with nodes 
     Convention: All member variables are made accessible in the first level to make it compatible with other functions, i.e. self.pos instead of self.mesh.pos
@@ -1352,7 +1351,21 @@ class ShapeList(object):
         self.shape_type_list.append(shape_type) 
 
 
-    def generate_mesh(self, dimension = 2, contact_radius = None, plot_mesh = True, plot_node_text=False, plot_shape = True, shapes_in_parallel=False, print_nnodes=True, keep_mesh=False):
+    #def generate_mesh(self, dimension = 2, contact_radius = None, plot_mesh = True, plot_node_text=False, plot_shape = True, shapes_in_parallel=False, print_nnodes=True, keep_mesh=False):
+    def generate_mesh(
+    self,
+    dimension=2,
+    contact_radius=None,
+    plot_mesh=True,
+    plot_node_text=False,
+    plot_shape=True,
+    shapes_in_parallel=False,
+    print_nnodes=True,
+    keep_mesh=False,
+    # NEW:
+    global_scale=None,          # e.g., 1e-3
+    scale_about=None,           # np.array([gx,gy,gz]) or "centroid"
+    scale_contact_and_delta=True): 
         """Returns a rank-2 array of particle meshes
         : shapes_in_parallel: if set to true, it computes the particle properties in parallel for each shape. Otherwise, the NbdArr and boundary node computation happens in parallel for each node. 
         Outermost parallelization is most preferable. So, for multiple shapes/particles with small number of nodes requires this option to be true. On the other hands, for single particle with many nodes, setting this to false works best.
@@ -1362,7 +1375,8 @@ class ShapeList(object):
         # if the shapes are computed in parallel, do not compute NbdArr etc in parallel
         # outermost parallelism
         nbdarr_in_parallel  = not shapes_in_parallel
-
+        def _scale_uniform(P, s, center):
+            return (P - center) * s + center
         print('Shape:', end=' ', flush=True)
 
         # Helper function
@@ -1400,10 +1414,37 @@ class ShapeList(object):
                 mesh.pos = P_new
                 # scale volume
                 mesh.vol *=((shape.scale_mesh_to/rad) ** dimension)
+                
+                # print("this isss mesh volume")
+                # print(mesh.vol)
+
+            #----------------------------------------------------------------
+            
+            # NEW: global compact scaling done here (before Particle())
+            if global_scale is not None:
+                if isinstance(scale_about, str) and scale_about.lower() == "centroid":
+                    center = np.mean(mesh.pos, axis=0)
+                elif isinstance(scale_about, (list, tuple, np.ndarray)):
+                    center = np.asarray(scale_about, dtype=float)
+                else:
+                    # default: per-mesh centroid
+                    center = np.mean(mesh.pos, axis=0)
+
+                mesh.pos = _scale_uniform(mesh.pos, float(global_scale), center)
+                mesh.vol *= (float(global_scale) ** dimension)
+
+                # # Keep horizon/contact consistent with the new scale
+                # if scale_contact_and_delta:
+                #     mat = self.material_list[sh]
+                #     mat.delta *= float(global_scale)
+                #     if contact_radius is not None:
+                #         contact_radius *= float(global_scale)
+                #
 
 
 
 
+            #----------------------------------------------------------------
             # print('total mesh volume: ', np.sum(mesh.vol))
 
             PP = Particle(mesh=mesh, shape=self.shape_list[sh], material=self.material_list[sh], nbdarr_in_parallel=nbdarr_in_parallel, keep_mesh=keep_mesh,shape_type=self.shape_type_list[sh])
@@ -2105,12 +2146,18 @@ def plot3d_setup(particles, dotsize=0.5, contact_radius=None, delta=None, wall=N
 
     # mx = np.amax(np.abs(P))
     mx = np.amax(np.abs(wall.get_lrtp()))
+    
     XYZlim = [-mx, mx]
-    ax.set_xlim3d(XYZlim)
-    ax.set_ylim3d(XYZlim)
-    ax.set_zlim3d(XYZlim)
-    ax.set_box_aspect((1, 1, 1))
-                
+    # ax.set_xlim3d(XYZlim)
+    # ax.set_ylim3d(XYZlim)
+    # ax.set_zlim3d(XYZlim)
+    # ax.set_box_aspect((1, 1, 1))
+    # after you compute x_min..z_max
+    ax.set_xlim(wall.x_min, wall.x_max)
+    ax.set_ylim(wall.y_min, wall.y_max)
+    ax.set_zlim(wall.z_min, wall.z_max)            
+    
+    ax.set_box_aspect([wall.x_max-wall.x_min, wall.y_max-wall.y_min,wall.z_max-wall.z_min])  # equal aspect
     plt.grid()
     plt.savefig(save_filename, dpi=300, bbox_inches='tight')
     if show_plot:

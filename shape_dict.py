@@ -2792,7 +2792,7 @@ def find_point_on_line(p1, p2, t):
 
 
 
-def plus3d(l = 1e-3,meshsize=1e-3, meshdata_dir='meshdata', filename_suffix='00'):
+def plus3d(l = 1e-3,meshsize=5e-4, meshdata_dir='meshdata', filename_suffix='00'):
    
     msh_file = meshdata_dir+'/plus3d_'+str(filename_suffix)+'.msh'
     gmsh.initialize()

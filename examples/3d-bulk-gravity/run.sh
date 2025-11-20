@@ -33,8 +33,8 @@ mkdir -p  $dir
 
 #------------------------Generate setup----------------------------
 echo "we are here"
-#python3 -u $path/setup.py --shape=$shape --setup_file $dir/setup.h5  --msh_path $dir_mesh  >>$logfile 
-python3 -u $path/setup.py --shape=$shape --setup_file $dir/setup.h5     
+#python3 -u $path/setup.py --shape=$shape --setup_file $dir/setup.h5  --msh_path $dir_mesh  >>$logfile
+python3 -u $path/setup.py --shape=$shape --setup_file $dir/setup.h5
 
 #----------------------MPIRUN-----------------------------
 
@@ -49,10 +49,3 @@ python3 -u $path/setup.py --shape=$shape --setup_file $dir/setup.h5
 
 #python3 plot3d_timestep.py --all_dir $dir --dotsize 30 --lc=50
 #python3 plot3d_timestep.py --all_dir $dir --dotsize 90 --lc=50
-
-
-
-
-
-
-

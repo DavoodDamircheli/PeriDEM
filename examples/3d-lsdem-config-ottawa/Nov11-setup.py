@@ -19,7 +19,6 @@ import sys
 import argparse
 import numpy as np
 import h5py
-import open3d as o3d
 
 # ====== adjust these imports to your project structure ======
 # ============================================================
@@ -44,7 +43,7 @@ def main():
     # I/O
     ap.add_argument("--datapath", type=str, default='/home/davood/projects/ls-shapes',  help="Path containing positions_image.dat and rotations_image.dat.")
     ap.add_argument("--mesh_dir", type=str, default = '/media/davood/093c4011-b7d0-4917-a86a-7c2fb7e4c748/project_data/grain-mesh-meshsize-10-voxel-7' , help="Directory with mesh_{i}.msh files.")
-    ap.add_argument("--N", type=int, default=4,
+    ap.add_argument("--N", type=int, default=10,
                 help="Number of particles to generate (overrides --ind if given).")
     ap.add_argument("--ind", type=str, default="3", help="Indices to load, e.g. '0,1,2' or '0:10' or '0:10:2'.")
     ap.add_argument("--path", type=str, default='examples_output', help="Output directory; setup.h5 and optional setup.png saved here.")
@@ -72,14 +71,14 @@ def main():
 
     # --- Set fundamental geometric scales from rad_scale ---
     
-    scale_global=1e-5
+    scale_global=1e0
     scale_overlap=1e0 
-    mf = 60    
+    mf = 50    
     # mf = 40 
     rad = scale_global
     # delta = 40*rad/3
     # contact_radius = 40*rad/4 
-    delta = mf*rad/3.015
+    delta = mf*rad/3
     contact_radius =mf* rad/4 
     print("rad is ",rad)
     print('delta is ', delta)
@@ -114,7 +113,7 @@ def main():
              #msh_file=msh_file,scale_mesh_to=rad,centroid_origin=True)   #????????????? 
         SL.append(shape=sh, count=1, meshsize=None, material=material)
 
-    ct = positions[ind] 
+
     particles = SL.generate_mesh(
         dimension=3,
         contact_radius=contact_radius,
@@ -124,58 +123,34 @@ def main():
         keep_mesh=True,
         # NEW:
         global_scale=scale_global,           # e.g., 1e-3
-        #scale_about=c_global,                # compact scaling about global center
-        #scale_about=ct,                # compact scaling about global center
-        #scale_contact_and_delta=False
+        scale_about=c_global,                # compact scaling about global center
+        scale_contact_and_delta=False
     ) 
     
     g  = c_global   
     S = scale_global 
     # --- Rotate & translate each particle to its target placement ---
-    pcd = o3d.geometry.PointCloud()   
+    
    #------------------------------------------------------------
     for k, ind in enumerate(idx):
         p  = particles[k][0]
-        q  = rotations[ind]             # ensure correct ordering! 
-        #R  = detect_rotation_matrix(rotations[ind])
-        #R  = safe_rotation_matrix_from_quat(q)
+        R  = detect_rotation_matrix(rotations[ind])
         ct = positions[ind]           # pre-compact desired center
-        quat = rotations[ind]
-
-        q1 =  quat[0]
-        q2 =  quat[1]
-        q3 =  quat[2]
-        q4 =  quat[3]
-        R = [[-q1**2+q2**2-q3**2+q4**2 , -2*(q1*q2-q3*q4)    ,  2*(q2*q3+q1*q4)],
-                  [-2*(q1*q2+q3*q4)     , q1**2-q2**2-q3**2+q4**2 ,  -2*(q1*q3-q2*q4)],
-                  [2*(q2*q3-q1*q4)      , -2*(q1*q3+q2*q4)    ,  -q1**2-q2**2+q3**2+q4**2]]
-
-        #pts = place_particle_points(p.pos, R, ct)
-        pcd.points = o3d.utility.Vector3dVector(p.pos)
-        pcd.rotate(R)
-        p.pos = pcd.points
 
         # 1) start with raw points
-        pts     = p.pos
-        c_loc   = np.mean(pts, axis=0)
-        c_loc_R = np.zeros(3) 
-        # # 2) rotate about the particle's current centroid (not ct)
-        #pts = rotate_about_center(pts, R, c_loc)
-        #pts = rotate_about_center(pts, R, c_loc)
-        # 4) place at the pre-compact center ct
-        #pts += (ct_scaled - c_loc)
+        pts = p.pos
+        c_loc = np.mean(pts, axis=0)
+        # 2) rotate about the particle's current centroid (not ct)
+        pts = rotate_about_center(pts, R, c_loc)
+        # # 4) place at the pre-compact center ct
         pts += (ct - c_loc)
-        #g = np.zeros(3) 
         d_final = g + S * (ct - g)
-        # #
-        # # # current center after step 5:
+        #
+        # # current center after step 5:
         c_now = centroid(pts)
-        #pts   = scale_local(pts, 0.75, c_now)  # try 0.995–0.999
-        
-
         p.pos=pts
         # 7) translate by a vector to hit the exact final center
-        t = d_final - c_now 
+        t = d_final - c_now
         p.shift(t)          # shift expects a delta vector
         # or p.pos = pts + 
         args.gravity=-1e4
@@ -244,6 +219,7 @@ def main():
     #######################################################################
     args.plot=1
     if  args.plot:
+        #plot3d_setup(particles, dotsize=15, wall=wall,show_plot=True, show_particle_index=False, delta=delta, contact_radius=contact_radius, trisurf=True, trisurf_transparent=False, trisurf_linewidth=0,trisurf_alpha=0.6, noscatter=True)
         plot3d_setup(particles, dotsize=15, wall=wall,show_plot=True,  delta=delta, contact_radius=contact_radius )
 
     # setup_file = args.path + '/setup.h5'
