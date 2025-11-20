@@ -494,8 +494,7 @@ void wall_cyl_side_force_update(double dist, Contact CN, double cyl_inward_norma
         //   wall_reaction_force((dir + 1) % 2) -= (vol_i * friction_force);
         // }
       } else {
-	  // Not implemented
-        // // dim 3
+        // dim 3
         // // two components of perpendicular to wall edge direction
         // unsigned dir_tang_1 = (dir + 1) % 3;
         // unsigned dir_tang_2 = (dir + 2) % 3;
@@ -503,35 +502,40 @@ void wall_cyl_side_force_update(double dist, Contact CN, double cyl_inward_norma
 	// // projection of velocity to the tangential direction (i.e. normal to wall)
         // auto vel_proj_1 = rel_vel_i(dir_tang_1);
         // auto vel_proj_2 = rel_vel_i(dir_tang_2);
+        //
         // auto vel_proj_norm = sqrt(pow(vel_proj_1, 2) + pow(vel_proj_2, 2));
-        //
-        // // What if the norm is zero?
-        // if (vel_proj_norm > 0) {
-        //   auto unit_comp_1 = vel_proj_1 / vel_proj_norm;
-        //   auto unit_comp_2 = vel_proj_2 / vel_proj_norm;
-        //
-        //   double friction_force_1 = (-CN.friction_coefficient) *
-        //                             abs(this_contact_force) * unit_comp_1;
-        //   double friction_force_2 = (-CN.friction_coefficient) *
-        //                             abs(this_contact_force) * unit_comp_2;
-        //
-        //     //f_friction = -CN.friction_coefficient * contact_force_norm *
-        //                  //rel_v_tangential_unit;
-	//  //// Correction for small velocity
-	//   if (vel_proj_norm < CN.friction_coefficient * abs(this_contact_force) * dt /rho) {
-	//       friction_force_1 = -vel_proj_norm/rho/dt * unit_comp_1;
-	//       friction_force_2 = -vel_proj_norm/rho/dt * unit_comp_2;
-	//   }
-        //
-        //   // x-value of the contact force
-        //   // combined_contact_force[i](0) += friction_force;
-        //   f_toupdate_i(dir_tang_1) += friction_force_1;
-        //   f_toupdate_i(dir_tang_2) += friction_force_2;
-        //
-	//   // multiply by volume to get force from force density
-        //   wall_reaction_force(dir_tang_1) -= (vol_i * friction_force_1);
-        //   wall_reaction_force(dir_tang_2) -= (vol_i * friction_force_2);
-        // }
+
+
+	// define unit tangential direction
+	Matrix<double, 1, dim> unit_tangential_dir;
+	// Matrix<double, 1, dim> unit_tangential_dir;
+	// 	unit_tangential_dir.setZero();
+	unit_tangential_dir(0) = cyl_inward_normal_x;
+	unit_tangential_dir(1) = cyl_inward_normal_y;
+	unit_tangential_dir(2) = 0;
+	
+	auto vel_tang_proj = rel_vel_i - rel_vel_normal_proj * unit_tangential_dir;
+        double vel_proj_norm = sqrt(pow(vel_tang_proj(0), 2) + pow(vel_tang_proj(1), 2) + pow(vel_tang_proj(2), 2));
+
+
+        // What if the norm is zero?
+        if (vel_proj_norm > 0) {
+          auto unit_comp = vel_tang_proj / vel_proj_norm;
+	  Matrix<double, 1, dim> friction_force = (-CN.friction_coefficient) * abs(this_contact_force) * unit_comp;
+	  std::cout << friction_force << std::endl;
+
+	 //// Correction for small velocity
+	  if (vel_proj_norm < CN.friction_coefficient * abs(this_contact_force) * dt /rho) {
+	      friction_force = -vel_proj_norm/rho/dt * unit_comp;
+	  }
+
+          // x-value of the contact force
+          // combined_contact_force[i](0) += friction_force;
+          f_toupdate_i += friction_force;
+
+	  // multiply by volume to get force from force density
+          wall_reaction_force -= (vol_i * friction_force);
+        }
       }
     }
 
