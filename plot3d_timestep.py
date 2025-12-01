@@ -60,6 +60,19 @@ parser.add_argument('--plot_contact_force', action='store_true', help='plot node
 parser.add_argument('--wheel_ind', type=int, help='index of the particle experiencing contact force', default=0)
 parser.add_argument('--nbr_ind', type=int, help='index of neighboring particle with which particle[wheel_ind] is in contact', default=4)
 
+parser.add_argument('--plot_cylinder', action='store_true',
+                    help='plot a vertical cylinder')
+parser.add_argument('--cyl_radius', type=float, default=0.1,
+                    help='radius of the cylinder')
+parser.add_argument('--cyl_center', type=float, nargs=2, metavar=('CX', 'CY'),
+                    default=[0.0, 0.0],
+                    help='x and y coordinates of the cylinder center')
+parser.add_argument('--cyl_zlim', type=float, nargs=2, metavar=('ZMIN', 'ZMAX'),
+                    default=None,
+                    help='optional z-limits of the cylinder; if omitted, use wall z_min/z_max')
+
+
+
 # finish parsing
 args = parser.parse_args()
 
@@ -278,6 +291,33 @@ def genplot(t):
 
         lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
         ax.add_collection(lc)
+    
+            # ---- Optional: plot cylinder ----
+        if args.plot_cylinder:
+            r = args.cyl_radius
+            cx, cy = args.cyl_center
+
+            # z-limits for the cylinder
+            if args.cyl_zlim is not None:
+                zc_min, zc_max = args.cyl_zlim
+            else:
+                zc_min, zc_max = z_min, z_max
+
+            # create cylinder surface (vertical along z)
+            n_theta = 60
+            n_z = 2  # just top and bottom rings are enough for a tube
+            theta = np.linspace(0.0, 2.0 * np.pi, n_theta)
+            z_vals = np.linspace(zc_min, zc_max, n_z)
+
+            theta_grid, z_grid = np.meshgrid(theta, z_vals)
+            x_grid = cx + r * np.cos(theta_grid)
+            y_grid = cy + r * np.sin(theta_grid)
+
+            ax.plot_surface(
+                x_grid, y_grid, z_grid,
+                alpha=0.3, linewidth=0, antialiased=False
+            )
+        # ---- end cylinder ----
 
     if not args.nocolorbar:
         fig.colorbar(forcolorbar)
@@ -307,8 +347,10 @@ def genplot(t):
         ax.view_init(view_az, view_angle)
     else:
         ax.view_init(args.view_az, args.view_angle)
-
+    #plt.show()
     plt.savefig(out_png, dpi=300, bbox_inches='tight')
+    
+    
     plt.close()
 
 if args.serial:

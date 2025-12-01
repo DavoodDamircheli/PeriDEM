@@ -2062,160 +2062,128 @@ def plot_setup(particles, dotsize=0.5, contact_radius=None, delta=None, linewidt
     if show_plot:
         plt.show()
 
-def plot3d_setup(particles, dotsize=0.5, contact_radius=None, delta=None, wall=None, show_plot=True, adaptive_dotsize=False, show_particle_index=False, save_filename='setup.png', trisurf=False, trisurf_transparent=False, trisurf_linewidth=0.1, trisurf_alpha=0.6, noscatter=False):
-    """plots the particle setup
-    :particles: array of particles
-    """
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    min_vol = 1
-    if adaptive_dotsize:
-        slot_shape = np.zeros(len(particles))
-        for sh in range(len(particles)):
-            shape = particles[sh]
-            slot_count = np.zeros(len(shape))
-            for count in range(len(shape)):
-                part = particles[sh][count]
-                slot_count[count] = np.min(part.vol)
-            slot_shape[sh] = np.min(slot_count)
-        min_vol = np.min(slot_shape)
-
-    for sh in range(len(particles)):
-        shape = particles[sh]
-        for count in range(len(shape)):
-            part = particles[sh][count]
-            P = part.pos
-            if adaptive_dotsize:
-                dval = np.sqrt(part.vol/min_vol) * float(dotsize)
-            else:
-                dval = dotsize
-
-            if not noscatter: 
-                ax.scatter(P[:,0], P[:,1], P[:,2], s=dval, marker = '.', linewidth=0, cmap='viridis')
-
-            # show clamped node
-            cc = part.clamped_nodes
-            for j in range(len(cc)):
-                c = cc[j]
-                if not noscatter: 
-                    ax.scatter(P[c,0], P[c,1], P[c,2], c='r', s=dval, linewidths=0)
-
-            if show_particle_index:
-                meanP = np.mean(P, axis=0)
-                ax.text(meanP[0], meanP[1], meanP[2], str(count))
-
-            if trisurf:
-                # color = None
-
-                if trisurf_transparent:
-                    color = (0,0,0,0)
-                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2], triangles=particles[sh][count].bdry_edges, color=color, linewidth=trisurf_linewidth, antialiased=True, edgecolor='k') 
-                else:
-                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2], triangles=particles[sh][count].bdry_edges, alpha=trisurf_alpha, linewidth=trisurf_linewidth, antialiased=True, edgecolor='k') 
-
-    if contact_radius:
-        part = particles[0][0]
-        node = 0
-        x0 = part.pos[node][0]
-        y0 = part.pos[node][1]
-        z0 = part.pos[node][2]
-        tt = np.linspace(0, 2*np.pi, endpoint=True)
-        xx = contact_radius * np.cos(tt)
-        yy = contact_radius * np.sin(tt)
-        plt.plot( xx + x0, yy + y0, z0)
-
-    if delta:
-        part = particles[0][0]
-        node = 0
-        x0 = part.pos[node][0]
-        y0 = part.pos[node][1]
-        z0 = part.pos[node][2]
-        tt = np.linspace(0, 2*np.pi, endpoint=True)
-        xx = delta * np.cos(tt)
-        yy = delta * np.sin(tt)
-        plt.plot( xx + x0, yy + y0, z0, 'r')
-
-    if wall:
-        wall_alpha = 0.8
-        wall_linewidth = 1
-        ls = wall.get_lines()
-        lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
-        ax.add_collection(lc)
-
-    # mx = np.amax(np.abs(P))
-    mx = np.amax(np.abs(wall.get_lrtp()))
-    
-    XYZlim = [-mx, mx]
-    # ax.set_xlim3d(XYZlim)
-    # ax.set_ylim3d(XYZlim)
-    # ax.set_zlim3d(XYZlim)
-    # ax.set_box_aspect((1, 1, 1))
-    # after you compute x_min..z_max
-    ax.set_xlim(wall.x_min, wall.x_max)
-    ax.set_ylim(wall.y_min, wall.y_max)
-    ax.set_zlim(wall.z_min, wall.z_max)            
-    
-    ax.set_box_aspect([wall.x_max-wall.x_min, wall.y_max-wall.y_min,wall.z_max-wall.z_min])  # equal aspect
-    plt.grid()
-    plt.savefig(save_filename, dpi=300, bbox_inches='tight')
-    if show_plot:
-        plt.show()
+# def plot3d_setup(particles, dotsize=0.5, contact_radius=None, delta=None, wall=None, show_plot=True, adaptive_dotsize=False, show_particle_index=False, save_filename='setup.png', trisurf=False, trisurf_transparent=False, trisurf_linewidth=0.1, trisurf_alpha=0.6, noscatter=False):
+#     """plots the particle setup
+#     :particles: array of particles
+#     """
+#
+#     fig = plt.figure()
+#     ax = fig.add_subplot(111, projection='3d')
+#
+#     min_vol = 1
+#     if adaptive_dotsize:
+#         slot_shape = np.zeros(len(particles))
+#         for sh in range(len(particles)):
+#             shape = particles[sh]
+#             slot_count = np.zeros(len(shape))
+#             for count in range(len(shape)):
+#                 part = particles[sh][count]
+#                 slot_count[count] = np.min(part.vol)
+#             slot_shape[sh] = np.min(slot_count)
+#         min_vol = np.min(slot_shape)
+#
+#     for sh in range(len(particles)):
+#         shape = particles[sh]
+#         for count in range(len(shape)):
+#             part = particles[sh][count]
+#             P = part.pos
+#             if adaptive_dotsize:
+#                 dval = np.sqrt(part.vol/min_vol) * float(dotsize)
+#             else:
+#                 dval = dotsize
+#
+#             if not noscatter: 
+#                 ax.scatter(P[:,0], P[:,1], P[:,2], s=dval, marker = '.', linewidth=0, cmap='viridis')
+#
+#             # show clamped node
+#             cc = part.clamped_nodes
+#             for j in range(len(cc)):
+#                 c = cc[j]
+#                 if not noscatter: 
+#                     ax.scatter(P[c,0], P[c,1], P[c,2], c='r', s=dval, linewidths=0)
+#
+#             if show_particle_index:
+#                 meanP = np.mean(P, axis=0)
+#                 ax.text(meanP[0], meanP[1], meanP[2], str(count))
+#
+#             if trisurf:
+#                 # color = None
+#
+#                 if trisurf_transparent:
+#                     color = (0,0,0,0)
+#                     ax.plot_trisurf(P[:,0], P[:,1], P[:,2], triangles=particles[sh][count].bdry_edges, color=color, linewidth=trisurf_linewidth, antialiased=True, edgecolor='k') 
+#                 else:
+#                     ax.plot_trisurf(P[:,0], P[:,1], P[:,2], triangles=particles[sh][count].bdry_edges, alpha=trisurf_alpha, linewidth=trisurf_linewidth, antialiased=True, edgecolor='k') 
+#
+#     if contact_radius:
+#         part = particles[0][0]
+#         node = 0
+#         x0 = part.pos[node][0]
+#         y0 = part.pos[node][1]
+#         z0 = part.pos[node][2]
+#         tt = np.linspace(0, 2*np.pi, endpoint=True)
+#         xx = contact_radius * np.cos(tt)
+#         yy = contact_radius * np.sin(tt)
+#         plt.plot( xx + x0, yy + y0, z0)
+#
+#     if delta:
+#         part = particles[0][0]
+#         node = 0
+#         x0 = part.pos[node][0]
+#         y0 = part.pos[node][1]
+#         z0 = part.pos[node][2]
+#         tt = np.linspace(0, 2*np.pi, endpoint=True)
+#         xx = delta * np.cos(tt)
+#         yy = delta * np.sin(tt)
+#         plt.plot( xx + x0, yy + y0, z0, 'r')
+#
+#     if wall:
+#         wall_alpha = 0.8
+#         wall_linewidth = 1
+#         ls = wall.get_lines()
+#         lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
+#         ax.add_collection(lc)
+#
+#     # mx = np.amax(np.abs(P))
+#     mx = np.amax(np.abs(wall.get_lrtp()))
+#     
+#     XYZlim = [-mx, mx]
+#     # ax.set_xlim3d(XYZlim)
+#     # ax.set_ylim3d(XYZlim)
+#     # ax.set_zlim3d(XYZlim)
+#     # ax.set_box_aspect((1, 1, 1))
+#     # after you compute x_min..z_max
+#     ax.set_xlim(wall.x_min, wall.x_max)
+#     ax.set_ylim(wall.y_min, wall.y_max)
+#     ax.set_zlim(wall.z_min, wall.z_max)            
+#     
+#     ax.set_box_aspect([wall.x_max-wall.x_min, wall.y_max-wall.y_min,wall.z_max-wall.z_min])  # equal aspect
+#     plt.grid()
+#     plt.savefig(save_filename, dpi=300, bbox_inches='tight')
+#     if show_plot:
+#         plt.show()
 
 #-----------------------------------------ploting cylinder-----------------------------
 
-
-
-
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
-
-# --- helper: build cylinder wireframe as line segments (M, 2, 3) ---
-def _cylinder_wire_segments(xc, yc, z_min, z_max, R, n_ring=128, n_vertical=12):
-    """
-    Returns an array of 3D line segments approximating a cylinder wireframe.
-    Segments shape: (M, 2, 3).
-    """
-    segs = []
-
-    # Rings (top & bottom)
-    theta = np.linspace(0.0, 2.0*np.pi, n_ring, endpoint=True)
-    xt = xc + R*np.cos(theta)
-    yt = yc + R*np.sin(theta)
-    xb = xt
-    yb = yt
-    zt = np.full_like(xt, z_max)
-    zb = np.full_like(xb, z_min)
-
-    # connect consecutive points for both rings
-    for k in range(n_ring-1):
-        segs.append(np.array([[xt[k], yt[k], zt[k]],
-                              [xt[k+1], yt[k+1], zt[k+1]]]))
-        segs.append(np.array([[xb[k], yb[k], zb[k]],
-                              [xb[k+1], yb[k+1], zb[k+1]]]))
-    # close rings
-    segs.append(np.array([[xt[-1], yt[-1], zt[-1]], [xt[0], yt[0], zt[0]]]))
-    segs.append(np.array([[xb[-1], yb[-1], zb[-1]], [xb[0], yb[0], zb[0]]]))
-
-    # Vertical generators
-    theta_v = np.linspace(0.0, 2.0*np.pi, n_vertical, endpoint=False)
-    xv = xc + R*np.cos(theta_v)
-    yv = yc + R*np.sin(theta_v)
-    for k in range(n_vertical):
-        segs.append(np.array([[xv[k], yv[k], z_min],
-                              [xv[k], yv[k], z_max]]))
-
-    return np.array(segs)
-
-
-def plot3d_setup_v2(particles, dotsize=0.5, contact_radius=None, delta=None, wall=None,
-                 show_plot=True, adaptive_dotsize=False, show_particle_index=False,
-                 save_filename='setup.png', trisurf=False, trisurf_transparent=False,
-                 trisurf_linewidth=0.1, trisurf_alpha=0.6, noscatter=False):
+def plot3d_setup(
+    particles,
+    dotsize=0.5,
+    contact_radius=None,
+    delta=None,
+    wall=None,
+    show_plot=True,
+    adaptive_dotsize=False,
+    show_particle_index=False,
+    save_filename='setup.png',
+    trisurf=False,
+    trisurf_transparent=False,
+    trisurf_linewidth=0.1,
+    trisurf_alpha=0.6,
+    noscatter=False,
+    cyl_radius=None,
+    cyl_center=None,
+    cyl_zlim=None,
+):
     """plots the particle setup
     :particles: array of particles
     """
@@ -2246,9 +2214,10 @@ def plot3d_setup_v2(particles, dotsize=0.5, contact_radius=None, delta=None, wal
                 dval = dotsize
 
             if not noscatter:
-                ax.scatter(P[:,0], P[:,1], P[:,2], s=dval, marker='.', linewidth=0, cmap='viridis')
+                ax.scatter(P[:,0], P[:,1], P[:,2],
+                           s=dval, marker='.', linewidth=0, cmap='viridis')
 
-            # show clamped nodes
+            # show clamped node
             cc = part.clamped_nodes
             for j in range(len(cc)):
                 c = cc[j]
@@ -2261,84 +2230,114 @@ def plot3d_setup_v2(particles, dotsize=0.5, contact_radius=None, delta=None, wal
 
             if trisurf:
                 if trisurf_transparent:
-                    color = (0,0,0,0)
-                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2],
-                                    triangles=particles[sh][count].bdry_edges,
-                                    color=color,
-                                    linewidth=trisurf_linewidth,
-                                    antialiased=True, edgecolor='k')
+                    color = (0, 0, 0, 0)
+                    ax.plot_trisurf(
+                        P[:,0], P[:,1], P[:,2],
+                        triangles=particles[sh][count].bdry_edges,
+                        color=color,
+                        linewidth=trisurf_linewidth,
+                        antialiased=True,
+                        edgecolor='k'
+                    )
                 else:
-                    ax.plot_trisurf(P[:,0], P[:,1], P[:,2],
-                                    triangles=particles[sh][count].bdry_edges,
-                                    alpha=trisurf_alpha,
-                                    linewidth=trisurf_linewidth,
-                                    antialiased=True, edgecolor='k')
+                    ax.plot_trisurf(
+                        P[:,0], P[:,1], P[:,2],
+                        triangles=particles[sh][count].bdry_edges,
+                        alpha=trisurf_alpha,
+                        linewidth=trisurf_linewidth,
+                        antialiased=True,
+                        edgecolor='k'
+                    )
 
-    # Draw a reference circle for contact radius at first node of first particle
     if contact_radius:
         part = particles[0][0]
         node = 0
-        x0, y0, z0 = part.pos[node]
-        tt = np.linspace(0, 2*np.pi, 200, endpoint=True)
-        xx = contact_radius * np.cos(tt) + x0
-        yy = contact_radius * np.sin(tt) + y0
-        ax.plot(xx, yy, zs=z0)
+        x0 = part.pos[node][0]
+        y0 = part.pos[node][1]
+        z0 = part.pos[node][2]
+        tt = np.linspace(0, 2*np.pi, endpoint=True)
+        xx = contact_radius * np.cos(tt)
+        yy = contact_radius * np.sin(tt)
+        plt.plot(xx + x0, yy + y0, z0)
 
-    # Draw a reference circle for delta
     if delta:
         part = particles[0][0]
         node = 0
-        x0, y0, z0 = part.pos[node]
-        tt = np.linspace(0, 2*np.pi, 200, endpoint=True)
-        xx = delta * np.cos(tt) + x0
-        yy = delta * np.sin(tt) + y0
-        ax.plot(xx, yy, zs=z0)
+        x0 = part.pos[node][0]
+        y0 = part.pos[node][1]
+        z0 = part.pos[node][2]
+        tt = np.linspace(0, 2*np.pi, endpoint=True)
+        xx = delta * np.cos(tt)
+        yy = delta * np.sin(tt)
+        plt.plot(xx + x0, yy + y0, z0, 'r')
 
-    # ---- WALL RENDERING -------------------------------------------------
     if wall:
         wall_alpha = 0.8
-        wall_linewidth = 1.0
+        wall_linewidth = 1
+        ls = wall.get_lines()
+        lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
+        ax.add_collection(lc)
 
-        # Prefer an explicit flag, fall back to presence of 'radius'
-        kind = getattr(wall, 'kind', None)
-        is_cylinder = (kind == 'cylinder') or hasattr(wall, 'radius')
+        # mx = np.amax(np.abs(P))
+        mx = np.amax(np.abs(wall.get_lrtp()))
 
-        if is_cylinder:
-            # Expect attrs: xc, yc, z_min, z_max, radius
-            segs = _cylinder_wire_segments(
-                xc=wall.xc, yc=wall.yc, z_min=wall.z_min, z_max=wall.z_max, R=wall.radius,
-                n_ring=160, n_vertical=12
-            )
-            lc = Line3DCollection(segs, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
-            ax.add_collection(lc)
-            # Set limits from cylinder AABB
-            x_min, y_min, z_min, x_max, y_max, z_max = wall.get_lrtp()
-            ax.set_xlim3d([x_min, x_max])
-            ax.set_ylim3d([y_min, y_max])
-            ax.set_zlim3d([z_min, z_max])
+        XYZlim = [-mx, mx]
+        # ax.set_xlim3d(XYZlim)
+        # ax.set_ylim3d(XYZlim)
+        # ax.set_zlim3d(XYZlim)
+        # ax.set_box_aspect((1, 1, 1))
+        # after you compute x_min..z_max
+        ax.set_xlim(wall.x_min, wall.x_max)
+        ax.set_ylim(wall.y_min, wall.y_max)
+        ax.set_zlim(wall.z_min, wall.z_max)
+
+        ax.set_box_aspect([
+            wall.x_max - wall.x_min,
+            wall.y_max - wall.y_min,
+            wall.z_max - wall.z_min
+        ])  # equal aspect
+
+    # ---- Cylinder plotting (vertical, along z) ----
+    if cyl_radius is not None and cyl_center is not None:
+        
+        print("hi basterd-----------------------")
+        cx, cy = cyl_center
+        # z-range for the cylinder
+        if cyl_zlim is not None:
+            z_min_cyl, z_max_cyl = cyl_zlim
+        elif wall is not None:
+            z_min_cyl, z_max_cyl = wall.z_min, wall.z_max
         else:
-            # Legacy box: use provided edges
-            ls = wall.get_lines()
-            lc = Line3DCollection(ls, linewidths=wall_linewidth, colors='k', alpha=wall_alpha)
-            ax.add_collection(lc)
-            # Use AABB to set limits (more robust than symmetric about 0)
-            x_min, y_min, z_min, x_max, y_max, z_max = wall.get_lrtp()
-            ax.set_xlim3d([x_min, x_max])
-            ax.set_ylim3d([y_min, y_max])
-            ax.set_zlim3d([z_min, z_max])
-    else:
-        # Fallback: autoscale based on first particle if no wall
-        P0 = particles[0][0].pos
-        mins = P0.min(axis=0); maxs = P0.max(axis=0)
-        ax.set_xlim3d([mins[0], maxs[0]])
-        ax.set_ylim3d([mins[1], maxs[1]])
-        ax.set_zlim3d([mins[2], maxs[2]])
+            # fallback: infer from all particle positions
+            all_pos = np.concatenate([p.pos for shape in particles for p in shape], axis=0)
+            z_min_cyl, z_max_cyl = np.min(all_pos[:,2]), np.max(all_pos[:,2])
 
-    ax.set_box_aspect((1, 1, 1))
-    ax.grid(True)
+        n_theta = 60
+        n_z = 2  # top and bottom rings
+        theta = np.linspace(0.0, 2.0 * np.pi, n_theta)
+        z_vals = np.linspace(z_min_cyl, z_max_cyl, n_z)
+        theta_grid, z_grid = np.meshgrid(theta, z_vals)
+        x_grid = cx + cyl_radius * np.cos(theta_grid)
+        y_grid = cy + cyl_radius * np.sin(theta_grid)
+
+        ax.plot_surface(
+            x_grid, y_grid, z_grid,
+            alpha=0.3,
+            linewidth=0,
+            antialiased=False
+        )
+    # ---- end cylinder ----
+
+    plt.grid()
     plt.savefig(save_filename, dpi=300, bbox_inches='tight')
     if show_plot:
         plt.show()
+
+
+
+
+
+
 
 #-----------------------------------------ploting cylinder-----------------------------
 class Experiment(object):
