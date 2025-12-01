@@ -229,8 +229,7 @@ private:
 };
 
 template <unsigned dim>
-void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
-                  RectWall<dim> Wall, ConfigVal CFGV) {
+void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall<dim> Wall, ConfigVal CFGV) {
 
   int numprocessors, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &numprocessors);
