@@ -16,10 +16,10 @@ class ConfigVal
 public:
     unsigned timesteps;
     unsigned modulo;
-    double dt;
+    double dt, dr_damping;
     bool is_parallel;
 
-    bool do_resume, wall_resume;
+    bool do_resume, wall_resume,use_dynamic_relaxation ;
     unsigned resume_ind;
     bool save_file;
     bool enable_fracture;
@@ -207,6 +207,9 @@ public:
 		else if (name == "modulo") {
 		    modulo = std::stoi(value);
 		}
+		else if (name == "dr_damping") {
+		    dr_damping = std::stod(value);
+		}
 		else if (name == "dt") {
 		    dt = std::stod(value);
 		}
@@ -218,6 +221,9 @@ public:
 		}
 		else if (name == "wall_resume") {
 		    wall_resume = std::stoi(value);
+		}
+		else if (name == "use_dynamic_relaxation") {
+		    use_dynamic_relaxation = std::stoi(value);
 		}
 		else if (name == "resume_ind") {
 		    resume_ind = std::stoi(value);

@@ -74,6 +74,7 @@ vector<ParticleN<dim>> load_particles(ConfigVal CFGV){
 	//start_from_zero<unsigned> (P.boundary_nodes);
 
 	P.disp = load_rowvecs<double, dim>(filename, file_suffix+"/disp");
+	//P.disp_old = load_rowvecs<double, dim>(filename, file_suffix+"/disp_old");
 	P.vel = load_rowvecs<double, dim>(filename, file_suffix+"/vel");
 	P.acc = load_rowvecs<double, dim>(filename, file_suffix+"/acc");
 

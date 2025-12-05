@@ -73,7 +73,9 @@ public:
   bool do_resume = 0;
   bool wall_resume = 0;
   bool save_file;
-
+  
+  bool use_dynamic_relaxation = 0; // from config
+  double dr_damping = 0.0;            // 0.0 = no extra damping, ~0.01–0.1 typical
   unsigned resume_ind;
   double dt;
   unsigned timesteps, modulo;
@@ -186,6 +188,8 @@ public:
     timesteps = CFGV.timesteps;
     modulo = CFGV.modulo;
     dt = CFGV.dt;
+    dr_damping = CFGV.dr_damping;
+    use_dynamic_relaxation = CFGV.use_dynamic_relaxation;
     do_resume = CFGV.do_resume;
     wall_resume = CFGV.wall_resume;
     resume_ind = CFGV.resume_ind;
@@ -238,7 +242,6 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
   unsigned total_particles_univ = PArr.size();
   unsigned counter;
   unsigned first_counter, last_counter;
-
   // generating all pairs a priori for contact detection
   unsigned total_particle_pair =
       total_particles_univ * (total_particles_univ - 1) / 2;
@@ -280,7 +283,10 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           PArr[i].pos;
       PArr[i].vel = load_rowvecs<double, dim>(filename, particlenum + "/vel");
       PArr[i].acc = load_rowvecs<double, dim>(filename, particlenum + "/acc");
-
+       
+    if (TL.use_dynamic_relaxation) {
+         PArr[i].disp_old = PArr[i].disp;  // start DR with u^{n-1} = u^n
+     } 
       if (TL.enable_fracture) {
         // load connectivity
         auto Conn =
@@ -534,9 +540,56 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     }
 
     for (unsigned i = 0; i < total_particles_univ; ++i) {
-      PArr[i].disp += TL.dt * PArr[i].vel + (TL.dt * TL.dt * 0.5) * PArr[i].acc;
-      PArr[i].CurrPos = PArr[i].pos + PArr[i].disp;
+
+  if (!TL.use_dynamic_relaxation) {
+    // ----- standard velocity Verlet over all nodes -----
+    for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
+        auto &u  = PArr[i].disp[j];
+        auto &v  = PArr[i].vel[j];
+        auto &a  = PArr[i].acc[j];
+
+        u += TL.dt * v + 0.5 * TL.dt * TL.dt * a;
+        PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
     }
+
+} else {
+    // ----- dynamic relaxation over all nodes -----
+  for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
+    auto &u     = PArr[i].disp[j];      // u_n
+    auto &u_old = PArr[i].disp_old[j];  // u_{n-1}
+    auto &a     = PArr[i].acc[j];
+    auto &v     = PArr[i].vel[j];
+
+    // u_{n+1} = 2 u_n - u_{n-1} + dt^2 a_n
+    Eigen::Matrix<double,1,dim> u_new =
+        2.0 * u - u_old + (TL.dt * TL.dt) * a;
+
+    // v_n ≈ (u_{n+1} - u_{n-1}) / (2 dt)
+    Eigen::Matrix<double,1,dim> v_new =
+        (u_new - u_old) / (2.0 * TL.dt);
+
+    // damping (now OK because v_new is a real matrix, not an expression)
+    v_new *= (1.0 - TL.dr_damping);
+
+    // rotate history
+    u_old = u;       // u_{n-1} ← u_n
+    u     = u_new;   // u_n     ← u_{n+1}
+    v     = v_new;
+
+    PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
+}
+ 
+}
+ 
+}
+
+    
+
+
+    // for (unsigned i = 0; i < total_particles_univ; ++i) {
+    //   PArr[i].disp += TL.dt * PArr[i].vel + (TL.dt * TL.dt * 0.5) * PArr[i].acc;
+    //   PArr[i].CurrPos = PArr[i].pos + PArr[i].disp;
+    // }
 
     // for (unsigned i = 0; i < total_particles_univ; ++i) {
     //#pragma omp parallel for schedule(dynamic) if (TL.run_parallel)

@@ -32,6 +32,13 @@ class ParticleN
     public:
 	unsigned nnodes;
 	vector<Matrix<double, 1, dim>> pos, disp, CurrPos, vel, acc, force, extforce;
+	vector<Matrix<double, 1, dim>> disp_old ;
+	
+    // NEW (correct for DR + Verlet)
+	//Eigen::Matrix<double,1,dim> disp;
+	//Eigen::Matrix<double,1,dim> disp_old;
+	
+	// vector<Matrix<double, 1, dim>> pos,  CurrPos, vel, acc, force, extforce;
 	vector<Matrix<double, 1, dim>> prescribed_velocity, applied_force_density;
 	vector<double> vol;
 	vector<unsigned> boundary_nodes;
@@ -45,7 +52,6 @@ class ParticleN
 
 	vector<vector<Matrix<double, 1, dim>>> xi;
 	vector<vector<double>> xi_norm;
-
 	vector<vector<double>> stretch;
 
 	double delta, rho, cnot, snot;
@@ -66,6 +72,8 @@ class ParticleN
 	    vol.resize(N);
 
 	    disp.resize(N);
+	    disp_old.resize(N);
+
 	    vel.resize(N);
 	    acc.resize(N);
 	    force.resize(N);
