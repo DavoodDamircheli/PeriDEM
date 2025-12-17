@@ -1,20 +1,20 @@
 #ifndef TIMELOOP_H
 #define TIMELOOP_H
-#include <iomanip>
 #include <chrono>
+#include <iomanip>
 using namespace std::chrono;
 
-#include "read/read_config.h"
 #include "compat/overloads.h"
+#include "particle/contact.h"
 #include "particle/particle2.h"
 #include "particle/timeloop.h"
-#include "particle/contact.h"
+#include "read/read_config.h"
 #include "read/rw_hdf5.h"
-
-#include <omp.h>
 #include <ctime>
-#include <time.h>
+#include <iostream>
 #include <mpi.h>
+#include <omp.h>
+#include <time.h>
 
 // Convert NbdArr to connectivity
 vector<Matrix<unsigned, 1, 2>> NbdArr2conn(vector<vector<unsigned>> NbdArr) {
@@ -44,16 +44,15 @@ vector<Matrix<unsigned, 1, 2>> NbdArr2conn(vector<vector<unsigned>> NbdArr) {
 };
 
 std::string format_ms(int ms) {
-    int s = ms / 1000;
-    //int rem_ms = ms % 1000;
-    int min = s / 60;
-    int rem_s = s % 60;
-    int hr = min / 60;
-    int rem_min = min % 60;
+  int s = ms / 1000;
+  // int rem_ms = ms % 1000;
+  int min = s / 60;
+  int rem_s = s % 60;
+  int hr = min / 60;
+  int rem_min = min % 60;
   std::stringstream ss;
-  ss <<  hr  << ":"
-      << std::setfill('0') << std::setw(2) << rem_min << ":"
-      << std::setfill('0') << std::setw(2) << rem_s ;
+  ss << hr << ":" << std::setfill('0') << std::setw(2) << rem_min << ":"
+     << std::setfill('0') << std::setw(2) << rem_s;
   return ss.str();
 }
 
@@ -73,9 +72,9 @@ public:
   bool do_resume = 0;
   bool wall_resume = 0;
   bool save_file;
-  
+
   bool use_dynamic_relaxation = 0; // from config
-  double dr_damping = 0.0;            // 0.0 = no extra damping, ~0.01–0.1 typical
+  double dr_damping = 0.0; // 0.0 = no extra damping, ~0.01–0.1 typical
   unsigned resume_ind;
   double dt;
   unsigned timesteps, modulo;
@@ -87,7 +86,7 @@ public:
   bool run_parallel;
 
   unsigned counter;
-  unsigned first_counter, last_counter=0;
+  unsigned first_counter, last_counter = 0;
 
   bool gradient_extforce = 0;
   bool enable_torque = 0;
@@ -105,6 +104,10 @@ public:
   bool reset_partzero_y = 0;
   unsigned reset_partzero_y_timestep;
   double wheel_rad;
+  // --- Quasi-static mode ---
+  bool quasi_static = 0; // 0 = current behavior, 1 = move-hold-relax
+  unsigned qs_relax_steps =
+      0; // nt: how many dynamic steps to relax after each wall move
 
   // forcefield variables
   int forcefield_type;
@@ -196,6 +199,8 @@ public:
     save_file = CFGV.save_file;
     enable_fracture = CFGV.enable_fracture;
     run_parallel = CFGV.is_parallel;
+    quasi_static = CFGV.quasi_static;
+    qs_relax_steps = CFGV.qs_relax_steps;
 
     if (CFGV.new_snot != (-1)) {
       override_fracture_toughness = 1;
@@ -233,7 +238,8 @@ private:
 };
 
 template <unsigned dim>
-void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall<dim> Wall, ConfigVal CFGV) {
+void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
+                  RectWall<dim> Wall, ConfigVal CFGV) {
 
   int numprocessors, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &numprocessors);
@@ -259,7 +265,7 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
   // string output_loc = "output/hdf5/";
   string output_loc = CFGV.output_dir;
 
-    std::cout << "Output data dir: " << output_loc << std::endl;
+  std::cout << "Output data dir: " << output_loc << std::endl;
 
   if (TL.do_resume) {
     counter = TL.resume_ind + 1;
@@ -272,7 +278,7 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     sprintf(buf, "/tc_%05u.h5", TL.resume_ind);
     string h5file = string(buf);
     string filename = data_loc + h5file;
-      std::cout << "Loading from file: " << filename << std::endl;
+    std::cout << "Loading from file: " << filename << std::endl;
 
     for (unsigned i = 0; i < total_particles_univ; ++i) {
       char buf2[100];
@@ -283,10 +289,10 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           PArr[i].pos;
       PArr[i].vel = load_rowvecs<double, dim>(filename, particlenum + "/vel");
       PArr[i].acc = load_rowvecs<double, dim>(filename, particlenum + "/acc");
-       
-    if (TL.use_dynamic_relaxation) {
-         PArr[i].disp_old = PArr[i].disp;  // start DR with u^{n-1} = u^n
-     } 
+
+      if (TL.use_dynamic_relaxation) {
+        PArr[i].disp_old = PArr[i].disp; // start DR with u^{n-1} = u^n
+      }
       if (TL.enable_fracture) {
         // load connectivity
         auto Conn =
@@ -302,14 +308,14 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
       sprintf(buf_w, "/wall_%05u.h5", TL.resume_ind);
       string wall_file = string(buf_w);
       string filename_wall = data_loc + wall_file;
-        std::cout << "Loading wall from file: " << filename_wall << std::endl;
+      std::cout << "Loading wall from file: " << filename_wall << std::endl;
       auto vv = load_col<double>(filename_wall, "wall_info");
       Wall.set_lrtb(vv);
 
       // std::cout << "wall info now: " << Wall.lrtb() << std::endl;
     }
 
-      std::cout << "Resuming from counter " << counter << std::endl;
+    std::cout << "Resuming from counter " << counter << std::endl;
   } else {
     counter = 1;
     first_counter = counter;
@@ -359,19 +365,18 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
   unsigned column_w = 12;
 
   char str_count[50];
-    std::cout
-        << "---------------------------------------------------------------"
-           "-------"
-        << std::endl;
-    std::cout << "Starting time loop "
-              << "(Parallel=" << TL.run_parallel << "): " << ctime(&my_time);
-    sprintf(str_count, "ct[%d:%d]", first_counter, last_counter);
-    std::cout << left << std::setw(column_w) << "t " << left
-              << std::setw(column_w) << string(str_count) << left
-              << std::setw(column_w+5) << "duration(s)" << left
-              << std::setw(column_w) << "rem(h:m:s)" << left
-              << std::setw(column_w) << "#contacts" << left
-              << std::setw(column_w) << "time" << std::endl;
+  std::cout << "---------------------------------------------------------------"
+               "-------"
+            << std::endl;
+  std::cout << "Starting time loop " << "(Parallel=" << TL.run_parallel
+            << "): " << ctime(&my_time);
+  sprintf(str_count, "ct[%d:%d]", first_counter, last_counter);
+  std::cout << left << std::setw(column_w) << "t " << left
+            << std::setw(column_w) << string(str_count) << left
+            << std::setw(column_w + 5) << "duration(s)" << left
+            << std::setw(column_w) << "rem(h:m:s)" << left
+            << std::setw(column_w) << "#contacts" << left << std::setw(column_w)
+            << "time" << std::endl;
 
   auto start_time = system_clock::now();
   vector<double> run_time, t_ind;
@@ -411,75 +416,76 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     if (CFGV.set_torque_timestep != (-1)) {
       if (t == (unsigned)CFGV.set_torque_timestep) {
         TL.enable_torque = 1;
-          std::cout << "Setting torque to " << TL.enable_torque
-                    << " on timestep " << t << std::endl;
+        std::cout << "Setting torque to " << TL.enable_torque << " on timestep "
+                  << t << std::endl;
       }
     }
 
     if (CFGV.set_fix_velocity_timestep != (-1)) {
       if (t == (unsigned)CFGV.set_fix_velocity_timestep) {
         TL.enable_velocity_constraint = 1;
-          std::cout << "Setting velocity constraint to "
-                    << TL.enable_velocity_constraint << " on timestep " << t
-                    << std::endl;
+        std::cout << "Setting velocity constraint to "
+                  << TL.enable_velocity_constraint << " on timestep " << t
+                  << std::endl;
       }
     }
 
     if (CFGV.set_fracture_timestep != (-1)) {
       if (t == (unsigned)CFGV.set_fracture_timestep) {
         TL.enable_fracture = 1;
-          std::cout << "Setting fracture to " << TL.enable_fracture
-                    << " on timestep " << t << std::endl;
+        std::cout << "Setting fracture to " << TL.enable_fracture
+                  << " on timestep " << t << std::endl;
       }
     }
 
     if (CFGV.set_self_contact_timestep != (-1)) {
       if (t == (unsigned)CFGV.set_self_contact_timestep) {
         CN.self_contact = 1;
-          std::cout << "Setting self_contact to " << CN.self_contact
-                    << " on timestep " << t << std::endl;
+        std::cout << "Setting self_contact to " << CN.self_contact
+                  << " on timestep " << t << std::endl;
       }
     }
 
     if (TL.set_damping_timestep != (-1)) {
       if (t == (unsigned)TL.set_damping_timestep) {
         CN.allow_damping = 1;
-          std::cout << "Setting damping to " << CN.allow_damping
-                    << " on timestep " << t << std::endl;
+        std::cout << "Setting damping to " << CN.allow_damping
+                  << " on timestep " << t << std::endl;
       }
     }
 
     if (TL.set_zero_wall_speed_timestep != (-1)) {
       if (t == (unsigned)TL.set_zero_wall_speed_timestep) {
-	if (dim == 2) {
-	    Wall.speed_left = 0;
-	   Wall.speed_right = 0;
-	     Wall.speed_top = 0;
-	  Wall.speed_bottom = 0;
-	} else {
-	  Wall.speed_x_min =0;
-	  Wall.speed_y_min =0;
-	  Wall.speed_z_min =0;
-	  Wall.speed_x_max =0;
-	  Wall.speed_y_max =0;
-	  Wall.speed_z_max =0;
-	}
-          std::cout << "Setting all wall speed to zero on timestep " << t << std::endl;
+        if (dim == 2) {
+          Wall.speed_left = 0;
+          Wall.speed_right = 0;
+          Wall.speed_top = 0;
+          Wall.speed_bottom = 0;
+        } else {
+          Wall.speed_x_min = 0;
+          Wall.speed_y_min = 0;
+          Wall.speed_z_min = 0;
+          Wall.speed_x_max = 0;
+          Wall.speed_y_max = 0;
+          Wall.speed_z_max = 0;
+        }
+        std::cout << "Setting all wall speed to zero on timestep " << t
+                  << std::endl;
       }
     }
 
     // brazil nut
     if (CFGV.brazil) {
 
-	int total_freq = CFGV.brazil_reset_wall_bottom_freq + CFGV.brazil_nonzero_wall_bottom_speed_freq;
-	int  this_t = ((int) t % total_freq);
+      int total_freq = CFGV.brazil_reset_wall_bottom_freq +
+                       CFGV.brazil_nonzero_wall_bottom_speed_freq;
+      int this_t = ((int)t % total_freq);
 
       if (this_t <= CFGV.brazil_nonzero_wall_bottom_speed_freq) {
-	  Wall.speed_bottom = CFGV.speed_wall_bottom;
-      }
-      else{
-	  Wall.speed_bottom = 0;
-	  Wall.bottom = CFGV.brazil_reset_wall_bottom_y;
+        Wall.speed_bottom = CFGV.speed_wall_bottom;
+      } else {
+        Wall.speed_bottom = 0;
+        Wall.bottom = CFGV.brazil_reset_wall_bottom_y;
       }
     }
 
@@ -487,8 +493,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
       auto part_ind = (unsigned)TL.set_movable_index;
       auto part_ts = (unsigned)TL.set_movable_timestep;
       if (part_ts == t) {
-          std::cout << "Setting particle " << TL.set_movable_index
-                    << " to movable on timestep " << t << std::endl;
+        std::cout << "Setting particle " << TL.set_movable_index
+                  << " to movable on timestep " << t << std::endl;
         PArr[part_ind].movable = 1;
       }
     }
@@ -496,8 +502,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
       auto part_ind = (unsigned)TL.set_stoppable_index;
       auto part_ts = (unsigned)TL.set_stoppable_timestep;
       if (part_ts == t) {
-          std::cout << "Setting particle " << TL.set_stoppable_index
-                    << " to stoppable on timestep " << t << std::endl;
+        std::cout << "Setting particle " << TL.set_stoppable_index
+                  << " to stoppable on timestep " << t << std::endl;
         PArr[part_ind].stoppable = 1;
       }
     }
@@ -507,32 +513,31 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
       if (part_ts == t) {
         // find max_y of the bulk: i=1,...
         double max_bulk_y = PArr[1].pos[0](1) + PArr[1].disp[1](1);
-        //double max_bulk_y;
-	bool init = 1;	// whether initial assignment
+        // double max_bulk_y;
+        bool init = 1; // whether initial assignment
         for (unsigned i = 1; i < total_particles_univ; ++i) {
           for (unsigned j = 0; j < PArr[i].nnodes; j++) {
-	      double now_x = PArr[i].pos[j](0) + PArr[i].disp[j](0);
-	      double now_y = PArr[i].pos[j](1) + PArr[i].disp[j](1);
-	      // only local bulk height
-	      if (abs(PArr[0].mean_CurrPos()(0)- now_x) <= TL.wheel_rad) {
-		  if (init) {
-		      // initial assignment to maximum as the first feasible element 
-		      max_bulk_y = now_y;
-		      init = !init;
-		  }
-		  else{
-		      if (now_y > max_bulk_y) {
-			  max_bulk_y = now_y;
-		    }
-		  }
-	      }
+            double now_x = PArr[i].pos[j](0) + PArr[i].disp[j](0);
+            double now_y = PArr[i].pos[j](1) + PArr[i].disp[j](1);
+            // only local bulk height
+            if (abs(PArr[0].mean_CurrPos()(0) - now_x) <= TL.wheel_rad) {
+              if (init) {
+                // initial assignment to maximum as the first feasible element
+                max_bulk_y = now_y;
+                init = !init;
+              } else {
+                if (now_y > max_bulk_y) {
+                  max_bulk_y = now_y;
+                }
+              }
+            }
           }
         }
         // move the mean by this amount
         double dest = max_bulk_y + TL.wheel_rad + CN.contact_rad;
         double to_move_by = dest - PArr[0].mean_CurrPos()(1);
-          std::cout << "Setting particle zero mean y val to  " << dest
-                    << std::endl;
+        std::cout << "Setting particle zero mean y val to  " << dest
+                  << std::endl;
         for (unsigned j = 0; j < PArr[0].nnodes; j++) {
           PArr[0].pos[j](1) += to_move_by;
         }
@@ -541,59 +546,54 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
 
     for (unsigned i = 0; i < total_particles_univ; ++i) {
 
-  if (!TL.use_dynamic_relaxation) {
-    // ----- standard velocity Verlet over all nodes -----
-    for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
-        auto &u  = PArr[i].disp[j];
-        auto &v  = PArr[i].vel[j];
-        auto &a  = PArr[i].acc[j];
+      if (!TL.use_dynamic_relaxation) {
+        // ----- standard velocity Verlet over all nodes -----
+        for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
+          auto &u = PArr[i].disp[j];
+          auto &v = PArr[i].vel[j];
+          auto &a = PArr[i].acc[j];
 
-        u += TL.dt * v + 0.5 * TL.dt * TL.dt * a;
-        PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
+          u += TL.dt * v + 0.5 * TL.dt * TL.dt * a;
+          PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
+        }
+
+      } else {
+        // ----- dynamic relaxation over all nodes -----
+        for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
+          auto &u = PArr[i].disp[j];         // u_n
+          auto &u_old = PArr[i].disp_old[j]; // u_{n-1}
+          auto &a = PArr[i].acc[j];
+          auto &v = PArr[i].vel[j];
+
+          // u_{n+1} = 2 u_n - u_{n-1} + dt^2 a_n
+          Eigen::Matrix<double, 1, dim> u_new =
+              2.0 * u - u_old + (TL.dt * TL.dt) * a;
+
+          // v_n ≈ (u_{n+1} - u_{n-1}) / (2 dt)
+          Eigen::Matrix<double, 1, dim> v_new = (u_new - u_old) / (2.0 * TL.dt);
+
+          // damping (now OK because v_new is a real matrix, not an expression)
+          v_new *= (1.0 - TL.dr_damping);
+
+          // rotate history
+          u_old = u; // u_{n-1} ← u_n
+          u = u_new; // u_n     ← u_{n+1}
+          v = v_new;
+
+          PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
+        }
+      }
     }
 
-} else {
-    // ----- dynamic relaxation over all nodes -----
-  for (size_t j = 0; j < PArr[i].disp.size(); ++j) {
-    auto &u     = PArr[i].disp[j];      // u_n
-    auto &u_old = PArr[i].disp_old[j];  // u_{n-1}
-    auto &a     = PArr[i].acc[j];
-    auto &v     = PArr[i].vel[j];
-
-    // u_{n+1} = 2 u_n - u_{n-1} + dt^2 a_n
-    Eigen::Matrix<double,1,dim> u_new =
-        2.0 * u - u_old + (TL.dt * TL.dt) * a;
-
-    // v_n ≈ (u_{n+1} - u_{n-1}) / (2 dt)
-    Eigen::Matrix<double,1,dim> v_new =
-        (u_new - u_old) / (2.0 * TL.dt);
-
-    // damping (now OK because v_new is a real matrix, not an expression)
-    v_new *= (1.0 - TL.dr_damping);
-
-    // rotate history
-    u_old = u;       // u_{n-1} ← u_n
-    u     = u_new;   // u_n     ← u_{n+1}
-    v     = v_new;
-
-    PArr[i].CurrPos[j] = PArr[i].pos[j] + u;
-}
- 
-}
- 
-}
-
-    
-
-
     // for (unsigned i = 0; i < total_particles_univ; ++i) {
-    //   PArr[i].disp += TL.dt * PArr[i].vel + (TL.dt * TL.dt * 0.5) * PArr[i].acc;
-    //   PArr[i].CurrPos = PArr[i].pos + PArr[i].disp;
+    //   PArr[i].disp += TL.dt * PArr[i].vel + (TL.dt * TL.dt * 0.5) *
+    //   PArr[i].acc; PArr[i].CurrPos = PArr[i].pos + PArr[i].disp;
     // }
 
     // for (unsigned i = 0; i < total_particles_univ; ++i) {
-    //#pragma omp parallel for schedule(dynamic) if (TL.run_parallel)
-    for (size_t i = rank; i < total_particles_univ; i += numprocessors) { // mpi loop
+    // #pragma omp parallel for schedule(dynamic) if (TL.run_parallel)
+    for (size_t i = rank; i < total_particles_univ;
+         i += numprocessors) { // mpi loop
       if (PArr[i].movable) {
         auto temp_ft_i = PArr[i].get_peridynamic_force();
         for (unsigned node = 0; node < PArr[i].nnodes; node++) {
@@ -614,9 +614,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           auto C_lrtb = lrtb[i];
           if (Wall.allow_wall) {
             if (!within_interior_fext(C_lrtb, Wall.lrtb(), CN.contact_rad)) {
-              update_wall_contact_force_by_boundary<dim>(PArr[i], Wall, CN,
-                                                         TL.dt, giant_f,
-                                                         giant_index[i]);
+              update_wall_contact_force_by_boundary<dim>(
+                  PArr[i], Wall, CN, TL.dt, giant_f, giant_index[i]);
             }
           }
 
@@ -624,9 +623,9 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           // ParticleN<dim> P_C, double dt, vector<Matrix<double, 1, dim>>
           // &combined_contact_force, double forcefield_scaling, bool
           // normalized, bool by_boundary) {
-          //apply_force_field<dim>(
-              //PArr[i], TL.forcefield_type, TL.dt, t, TL.timesteps,
-              //giant_f, giant_index[i], TL.forcefield_scaling, 1, 0);
+          // apply_force_field<dim>(
+          // PArr[i], TL.forcefield_type, TL.dt, t, TL.timesteps,
+          // giant_f, giant_index[i], TL.forcefield_scaling, 1, 0);
           //}
         }
 
@@ -703,16 +702,16 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     }
 
     pw_comp_count += pairwise_computations;
-    //pw_comp_count /= TL.modulo;
+    // pw_comp_count /= TL.modulo;
 
     // MPI_Barrier( MPI_COMM_WORLD);
     // Communicate
     MPI_Allreduce(MPI_IN_PLACE, giant_f[0].data(), dim * total_univ_nodes,
                   MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    //#pragma omp parallel for if (TL.run_parallel)
+    // #pragma omp parallel for if (TL.run_parallel)
     for (unsigned i = 0; i < total_particles_univ; ++i) {
-      // extract force from giant force vector after synchronized sum 
+      // extract force from giant force vector after synchronized sum
       for (unsigned node = 0; node < PArr[i].nnodes; node++) {
         PArr[i].force[node] = giant_f[giant_index[i] + node];
       }
@@ -738,7 +737,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
             (TL.enable_velocity_constraint)) {
           vector<Matrix<double, 1, dim>> prescribed_velocity(PArr[i].nnodes);
 
-          //// Decomposing velocity into rotation and translation part (velocity=Ax+b)
+          //// Decomposing velocity into rotation and translation part
+          ///(velocity=Ax+b)
           // translation part of the velocity
           Matrix<double, 1, dim> mean_vel;
           mean_vel.setZero();
@@ -834,47 +834,104 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     // std::cout << "Done updating states" << std::endl;
 
     // wall boundary update
-    if (dim == 2) {
-      Wall.left += Wall.speed_left * TL.dt;
-      Wall.right += Wall.speed_right * TL.dt;
-      Wall.top += Wall.speed_top * TL.dt;
-      Wall.bottom += Wall.speed_bottom * TL.dt;
+    // if (dim == 2) {
+    //   Wall.left += Wall.speed_left * TL.dt;
+    //   Wall.right += Wall.speed_right * TL.dt;
+    //   Wall.top += Wall.speed_top * TL.dt;
+    //   Wall.bottom += Wall.speed_bottom * TL.dt;
+    // } else {
+    //   Wall.x_min += Wall.speed_x_min * TL.dt;
+    //   Wall.y_min += Wall.speed_y_min * TL.dt;
+    //   Wall.z_min += Wall.speed_z_min * TL.dt;
+    //   Wall.x_max += Wall.speed_x_max * TL.dt;
+    //   Wall.y_max += Wall.speed_y_max * TL.dt;
+    //   Wall.z_max += Wall.speed_z_max * TL.dt;
+    // }
+
+    // if (rank == 0)
+    //   std::cout << "this is quasi_static------------->" << TL.quasi_static
+    //             << endl;
+    // if (rank == 0) {
+    //   std::cerr << "this is quasi_static-------------> " << TL.quasi_static
+    //             << "\n";
+    // }
+
+    // wall boundary update
+    if (!TL.quasi_static) {
+
+      // === CURRENT behavior: wall moves every timestep ===
+      if (dim == 2) {
+        Wall.left += Wall.speed_left * TL.dt;
+        Wall.right += Wall.speed_right * TL.dt;
+        Wall.top += Wall.speed_top * TL.dt;
+        Wall.bottom += Wall.speed_bottom * TL.dt;
+      } else {
+        Wall.x_min += Wall.speed_x_min * TL.dt;
+        Wall.y_min += Wall.speed_y_min * TL.dt;
+        Wall.z_min += Wall.speed_z_min * TL.dt;
+        Wall.x_max += Wall.speed_x_max * TL.dt;
+        Wall.y_max += Wall.speed_y_max * TL.dt;
+        Wall.z_max += Wall.speed_z_max * TL.dt;
+      }
+
     } else {
-      Wall.x_min += Wall.speed_x_min * TL.dt;
-      Wall.y_min += Wall.speed_y_min * TL.dt;
-      Wall.z_min += Wall.speed_z_min * TL.dt;
-      Wall.x_max += Wall.speed_x_max * TL.dt;
-      Wall.y_max += Wall.speed_y_max * TL.dt;
-      Wall.z_max += Wall.speed_z_max * TL.dt;
+
+      // === QUASI-STATIC behavior ===
+      // cycle length = 1 (move step) + nt (relax steps)
+      unsigned cycle = TL.qs_relax_steps + 1;
+      bool do_move =
+          (cycle > 0) ? (t % cycle == 1) : true; // move at t=1, 1+cycle, ...
+
+      if (do_move) {
+        // Move wall ONE increment (same increment you would do in 1 dynamic
+        // timestep)
+        if (dim == 2) {
+          Wall.left += Wall.speed_left * TL.dt;
+          Wall.right += Wall.speed_right * TL.dt;
+          Wall.top += Wall.speed_top * TL.dt;
+          Wall.bottom += Wall.speed_bottom * TL.dt;
+        } else {
+          Wall.x_min += Wall.speed_x_min * TL.dt;
+          Wall.y_min += Wall.speed_y_min * TL.dt;
+          Wall.z_min += Wall.speed_z_min * TL.dt;
+          Wall.x_max += Wall.speed_x_max * TL.dt;
+          Wall.y_max += Wall.speed_y_max * TL.dt;
+          Wall.z_max += Wall.speed_z_max * TL.dt;
+        }
+      }
+      // else: do nothing => wall is frozen while dynamics/damping relax
     }
+
     // --- user-set knobs (read from config or set before the loop) ---
 
-	// --- one-time guard so we only jump once ---
-	static bool top_wall_jumped = false;
-	// --- do the jump exactly at the chosen step ---
-	if (dim == 3 && Wall.jump_wall == 1 && !top_wall_jumped && counter == Wall.jump_step) {
-	    if (Wall.z_jump >= 0.0) {
+    // --- one-time guard so we only jump once ---
+    static bool top_wall_jumped = false;
+    // --- do the jump exactly at the chosen step ---
+    if (dim == 3 && Wall.jump_wall == 1 && !top_wall_jumped &&
+        counter == Wall.jump_step) {
+      if (Wall.z_jump >= 0.0) {
         // absolute placement
         Wall.z_max = Wall.z_jump;
-    } else {
+      } else {
         // relative move: distance = speed * (my_time_step) * dt
         // here 'my_time_step' == jump_move_steps
-        Wall.z_max += Wall.speed_z_max * static_cast<double>(Wall.jump_move_steps) * TL.dt;
-	std::cout<<"hello";
+        Wall.z_max += Wall.speed_z_max *
+                      static_cast<double>(Wall.jump_move_steps) * TL.dt;
+        std::cout << "hello";
+      }
+
+      // optional: stop soon after the jump
+      // if (steps_after_jump > 0) {
+      //    TL.timesteps = std::min(TL.timesteps, TL.step +
+      //    Wall.steps_after_jump);
+      //}
+
+      top_wall_jumped = true;
+
+      // optional: print for debugging
+      std::cout << "[jump] step=" << counter << " new Wall.z_max=" << Wall.z_max
+                << std::endl;
     }
-
-    // optional: stop soon after the jump
-    //if (steps_after_jump > 0) {
-    //    TL.timesteps = std::min(TL.timesteps, TL.step + Wall.steps_after_jump);
-    //}
-
-    top_wall_jumped = true;
-
-    // optional: print for debugging
-    std::cout << "[jump] step=" <<counter 
-              << " new Wall.z_max=" << Wall.z_max << std::endl;
-}
-    
 
     // // save
     // if (0) {
@@ -906,9 +963,9 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           string filename = output_loc + "/tc_" + tcounter + ".h5";
           H5::H5File fp(filename.c_str(), H5F_ACC_TRUNC);
 
-          //#pragma omp parallel for if (TL.run_parallel)
-          // for (size_t i = rank; i < total_particles_univ; i+=numprocessors){
-          // // mpi loop
+          // #pragma omp parallel for if (TL.run_parallel)
+          //  for (size_t i = rank; i < total_particles_univ; i+=numprocessors){
+          //  // mpi loop
           for (unsigned i = 0; i < total_particles_univ; i++) {
             char buf2[100];
             sprintf(buf2, "P_%05u", i);
@@ -944,8 +1001,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
               int number_amount;
               MPI_Get_count(&status, MPI_UNSIGNED, &number_amount);
 
-              //if (number_amount % 2) {
-                //std::cout << "Error getting connectivity info" << std::endl;
+              // if (number_amount % 2) {
+              // std::cout << "Error getting connectivity info" << std::endl;
               //}
               vector<Matrix<unsigned, 1, 2>> temp_conn(number_amount / 2);
               // receive from rank = ? tag i
@@ -988,7 +1045,8 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
 
           auto stop_time = system_clock::now();
           auto duration_raw = (stop_time - start_time);
-          // are nanoseconds, microseconds, milliseconds, seconds, minutes, hours 
+          // are nanoseconds, microseconds, milliseconds, seconds, minutes,
+          // hours
           auto duration = duration_cast<milliseconds>(duration_raw);
           // update for next loop
           start_time = stop_time;
@@ -996,35 +1054,35 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
           // prediction: from last n avg
           int avgsteps = 10;
           double avg_duration = 0;
-	  int start_ind = (run_time.size() - avgsteps);
-	  if (start_ind > 0) {
-            for (int cc = start_ind; cc < (int) run_time.size(); cc++) {
+          int start_ind = (run_time.size() - avgsteps);
+          if (start_ind > 0) {
+            for (int cc = start_ind; cc < (int)run_time.size(); cc++) {
               avg_duration += run_time[cc];
             }
           }
-	  avg_duration /= avgsteps ;
+          avg_duration /= avgsteps;
 
           int rem_counts = last_counter - counter;
           int rem_duration_ms = (rem_counts * avg_duration);
 
-	  // now time
+          // now time
           time_t my_time = time(NULL);
           char timestring[80];
           strftime(timestring, 80, "%F-%T", localtime(&my_time));
 
-          std::cout
-              << left << std::setw(column_w) << t 
-	      << left << std::setw(column_w) << counter 
-	      << left << std::setw(column_w+5) << (double)duration.count() / 1000
-	      << left << std::setw(column_w) << format_ms(rem_duration_ms)
-              << left << std::setw(column_w) << pw_comp_count
-              << left << std::setw(column_w) << timestring << std::endl;
+          std::cout << left << std::setw(column_w) << t << left
+                    << std::setw(column_w) << counter << left
+                    << std::setw(column_w + 5)
+                    << (double)duration.count() / 1000 << left
+                    << std::setw(column_w) << format_ms(rem_duration_ms) << left
+                    << std::setw(column_w) << pw_comp_count << left
+                    << std::setw(column_w) << timestring << std::endl;
 
-	  // store
+          // store
           run_time.push_back(duration.count());
           t_ind.push_back(t);
-	  pw_comp_count_vec.push_back(pw_comp_count);
-	  pw_comp_count = 0;
+          pw_comp_count_vec.push_back(pw_comp_count);
+          pw_comp_count = 0;
 
           // update
           ++counter;
@@ -1033,15 +1091,15 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,RectWall
     }
   }
 
-   //save runtime to file
-   if (rank == 0) {
-       string runtime_filename = "output/hdf5/run_time.h5";
-       H5::H5File rt_fp(runtime_filename.c_str(), H5F_ACC_TRUNC);
-       store_col<double>(rt_fp, "run_time", run_time);
-       store_col<double>(rt_fp, "t_ind", t_ind);
-       store_col<unsigned>(rt_fp, "pairwise_computations", pw_comp_count_vec);
-       rt_fp.close();
-   }
+  // save runtime to file
+  if (rank == 0) {
+    string runtime_filename = "output/hdf5/run_time.h5";
+    H5::H5File rt_fp(runtime_filename.c_str(), H5F_ACC_TRUNC);
+    store_col<double>(rt_fp, "run_time", run_time);
+    store_col<double>(rt_fp, "t_ind", t_ind);
+    store_col<unsigned>(rt_fp, "pairwise_computations", pw_comp_count_vec);
+    rt_fp.close();
+  }
 };
 
 #endif /* ifndef TIMELOOP_H */

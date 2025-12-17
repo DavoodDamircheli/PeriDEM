@@ -115,14 +115,17 @@ public:
   bool override_particle_acc = 0;      // 0/1
   bool override_particle_extforce = 0; // 0/1
   bool add_particle_acc = 0; // 0/1 (if 1: acc += value; if 0: acc = value)
-
+  // --- Quasi-static mode ---
+  bool quasi_static = 0; // 0 = current behavior, 1 = move-hold-relax
+  // nt: how many dynamic steps to relax after each wall move
+  unsigned qs_relax_steps = 0;
   // apply to all particles by default; set >=0 to target one particle index
   int override_particle_id = -1;
 
   // stored as a simple string, parsed later (keeps read_file style simple)
-  std::string particle_vel_value = "0,0,0";
-  std::string particle_acc_value = "0,0,0";
-  std::string particle_extforce_value = "0,0,0";
+  string particle_vel_value = "0,0,0";
+  string particle_acc_value = "0,0,0";
+  string particle_extforce_value = "0,0,0";
 
   // obtained via command line
   string setup_filename = "data/hdf5/all.h5";
@@ -445,6 +448,10 @@ public:
           particle_vel_value = value; // e.g. "0,0,0"
         } else if (name == "particle_extforce_value") {
           particle_vel_value = value; // e.g. "0,0,0"
+        } else if (name == "quasi_static") {
+          quasi_static = std::stoi(value);
+        } else if (name == "qs_relax_steps") {
+          qs_relax_steps = std::stoi(value);
         }
 
         else {
