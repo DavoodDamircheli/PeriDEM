@@ -122,6 +122,14 @@ public:
   // apply to all particles by default; set >=0 to target one particle index
   int override_particle_id = -1;
 
+  // --- Adaptive quasi-static (gap control) ---
+  bool qs_adaptive = 0;    // 0=off, 1=on
+  double qs_gap_tol = 0.0; // target max gap between material top and wall top
+  double qs_gap_factor =
+      0.0; // target max gap between material top and wall top
+  double qs_max_wall_step =
+      -1; // <=0 means "no cap"; otherwise cap per move step
+
   // stored as a simple string, parsed later (keeps read_file style simple)
   string particle_vel_value = "0,0,0";
   string particle_acc_value = "0,0,0";
@@ -452,9 +460,17 @@ public:
           quasi_static = std::stoi(value);
         } else if (name == "qs_relax_steps") {
           qs_relax_steps = std::stoi(value);
+        } else if (name == "qs_adaptive") {
+          qs_adaptive = std::stoi(value);
+        } else if (name == "qs_gap_tol") {
+          qs_gap_tol = std::stod(value); // e.g. "0,0,0"
+        } else if (name == "qs_gap_factor") {
+          qs_gap_factor = std::stod(value); // e.g. "0,0,0"
         }
 
-        else {
+        else if (name == "qs_max_wall_step") {
+          qs_max_wall_step = std::stod(value); // e.g. "0,0,0"
+        } else {
           std::cerr << "[Error]: Wrong config name: " << name << " !!\n";
         }
       }

@@ -25,24 +25,120 @@ from multiprocessing import Pool, get_context
 
 import pdb
 #pdb.set_trace()
-#######################################################################
+# #######################################################################
+# class Material(object):
+    # """docstring for Material"""
+    # def __init__(self, delta, rho, snot, cnot, bulk_modulus, E = None, nu = None, Gnot = None, shear_modulus = None, name=None):
+    #     super(Material, self).__init__()
+    #     self.delta  = delta
+    #     self.rho    = rho     
+    #     self.snot   = snot
+    #     self.cnot   = cnot
+    #     self.bulk_modulus = bulk_modulus
+    #
+    #     self.E = E
+    #     self.nu = nu
+    #     self.Gnot = Gnot
+    #     self.shear_modulus = shear_modulus
+    #
+    #     self.name = name
+    #
+
+# class Material(object):
+#     """Material properties (including optional yield/plateau constitutive parameters)."""
+#     def __init__(self, delta, rho, snot, cnot, bulk_modulus,
+#                  E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+#                  # --- NEW optional parameters ---
+#                  rLp=0.0, rLm=0.0, delta_y=0.0, use_yield_plateau_law=False):
+#         super(Material, self).__init__()
+#
+#         # existing
+#         self.delta = delta
+#         self.rho = rho
+#         self.snot = snot
+#         self.cnot = cnot
+#         self.bulk_modulus = bulk_modulus
+#         self.E = E
+#         self.nu = nu
+#         self.Gnot = Gnot
+#         self.shear_modulus = shear_modulus
+#         self.name = name
+#
+#         # new
+#         self.rLp = rLp
+#         self.rLm = rLm
+#         self.delta_y = delta_y
+#         self.use_yield_plateau_law = use_yield_plateau_law
+#
+#
+#         self.s_tension_crit=s_tension_crit
+#         self.s_compression_crit=s_compression_crit
+#
+#------------------------------------------------------------------------
+#########################################################################
+#------------------------------------------------------------------------
+
+
 class Material(object):
-    """docstring for Material"""
-    def __init__(self, delta, rho, snot, cnot, bulk_modulus, E = None, nu = None, Gnot = None, shear_modulus = None, name=None):
+    def __init__(
+        self,
+        delta, rho, snot,
+        s_tension_crit, s_compression_crit,
+        cnot, bulk_modulus,
+        E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+
+        # --- yield/plateau params ---
+        rLp=None, rLm=None, delta_y=None, use_yield_plateau_law=False,
+
+        # --- NEW: softening + break params ---
+        rSp=None, rFp=None,   # tension: softening start / fracture
+        rSm=None, rFm=None,   # compression magnitudes: softening start / fracture
+
+        # --- optional: default ratios for auto-fill ---
+        soft_start_mult=3.0,   # rS = soft_start_mult * rL
+        fracture_mult=6.0,     # rF = fracture_mult   * rL
+        min_gap=0.0            # if you want, set e.g. 5e-6 to enforce separation
+    ):
         super(Material, self).__init__()
-        self.delta  = delta
-        self.rho    = rho     
-        self.snot   = snot
-        self.cnot   = cnot
-        self.bulk_modulus = bulk_modulus
+
+        # base
+        self.delta  = float(delta)
+        self.rho    = float(rho)
+        self.snot   = float(snot)
+        self.cnot   = float(cnot)
+        self.bulk_modulus = float(bulk_modulus)
+
+        self.s_tension_crit = float(s_tension_crit)
+        self.s_compression_crit = float(s_compression_crit)
 
         self.E = E
         self.nu = nu
         self.Gnot = Gnot
         self.shear_modulus = shear_modulus
-
         self.name = name
 
+        # yield/plateau
+        self.rLp = rLp
+        self.rLm = rLm
+        self.delta_y = delta_y
+        self.use_yield_plateau_law = bool(use_yield_plateau_law)
+
+        # softening/break (may be None for now; we may auto-fill below)
+        self.rSp = rSp
+        self.rFp = rFp
+        self.rSm = rSm
+        self.rFm = rFm
+
+        # defaults for auto-fill
+        self.soft_start_mult = float(soft_start_mult)
+        self.fracture_mult = float(fracture_mult)
+        self.min_gap = float(min_gap)
+
+
+
+#------------------------------------------------------------------------
+#########################################################################
+#------------------------------------------------------------------------
 def peri_deformable(delta, rho_scale=1, K_scale=1, G_scale=1, Gnot_scale=1):
     """ Smaller fracture toughness
     """
@@ -2393,52 +2489,101 @@ class Experiment(object):
         :returns: TODO
 
         """
-        print('Saving to', filename,  'Univ particle: ')
+        print('Saving to', filename, 'Univ particle:')
         with h5py.File(filename, "w") as f:
-            # universal index starts at 1 to be compatible with matlab
-            # j = 1
             # universal index starts at 0 to be compatible with C++
             j = 0
 
             for sh in range(len(self.particles)):
                 count = len(self.particles[sh])
+
                 for i in range(count):
                     particle = self.particles[sh][i]
                     p_ind = ('P_%05d' % j)
-                    f.create_dataset(p_ind + '/Pos', data=particle.pos)
-                    f.create_dataset(p_ind + '/Vol', data=particle.vol)
-                    f.create_dataset(p_ind + '/Connectivity', data=particle.NArr)
-                    # needs to be a column matrix
-                    f.create_dataset(p_ind + '/bdry_nodes', data=np.array([particle.nonlocal_bdry_nodes]).transpose())
-                    f.create_dataset(p_ind + '/bdry_edges', data=np.array(particle.bdry_edges))
 
-                    f.create_dataset(p_ind + '/clamped_nodes', data=np.array(particle.clamped_nodes))
+                    # -------------------------
+                    # Geometry / topology
+                    # -------------------------
+                    f.create_dataset(p_ind + '/Pos', data=np.asarray(particle.pos))
+                    f.create_dataset(p_ind + '/Vol', data=np.asarray(particle.vol))
+                    f.create_dataset(p_ind + '/Connectivity', data=np.asarray(particle.NArr))
 
+                    # Ensure column vector shape for bdry_nodes (N x 1)
+                    bdry_nodes = np.asarray(particle.nonlocal_bdry_nodes, dtype=np.int64).reshape(-1, 1)
+                    f.create_dataset(p_ind + '/bdry_nodes', data=bdry_nodes)
+
+                    f.create_dataset(p_ind + '/bdry_edges', data=np.asarray(particle.bdry_edges, dtype=np.int64))
+                    f.create_dataset(p_ind + '/clamped_nodes', data=np.asarray(particle.clamped_nodes, dtype=np.int64))
+
+                    # -------------------------
                     # Initial conditions
-                    f.create_dataset(p_ind + '/disp', data=particle.disp)
-                    f.create_dataset(p_ind + '/vel', data=particle.vel)
-                    f.create_dataset(p_ind + '/acc', data=particle.acc)
-                    f.create_dataset(p_ind + '/extforce', data=particle.extforce)
+                    # -------------------------
+                    f.create_dataset(p_ind + '/disp', data=np.asarray(particle.disp))
+                    f.create_dataset(p_ind + '/vel', data=np.asarray(particle.vel))
+                    f.create_dataset(p_ind + '/acc', data=np.asarray(particle.acc))
+                    f.create_dataset(p_ind + '/extforce', data=np.asarray(particle.extforce))
 
-                    # Material properties
-                    f.create_dataset(p_ind + '/delta', data=[[particle.material.delta]])
-                    f.create_dataset(p_ind + '/rho', data= [[particle.material.rho]])
-                    f.create_dataset(p_ind + '/cnot', data= [[particle.material.cnot]])
-                    f.create_dataset(p_ind + '/snot', data= [[particle.material.snot]])
+                    # -------------------------
+                    # Material properties (always present)
+                    # Store as 1x1 to match your C++ loader expectation
+                    # -------------------------
+                    mat = particle.material
+                    f.create_dataset(p_ind + '/delta', data=np.array([[float(mat.delta)]]))
+                    f.create_dataset(p_ind + '/rho',   data=np.array([[float(mat.rho)]]))
+                    f.create_dataset(p_ind + '/cnot',  data=np.array([[float(mat.cnot)]]))
+                    f.create_dataset(p_ind + '/snot',  data=np.array([[float(mat.snot)]]))
+                    f.create_dataset(p_ind + '/s_tension_crit',     data=np.array([[float(mat.s_tension_crit)]]))
+                    f.create_dataset(p_ind + '/s_compression_crit', data=np.array([[float(mat.s_compression_crit)]]))
 
+                    # -------------------------
+                    # NEW: yield/plateau + softening/break parameters (optional)
+                    # Always write them (0 if not provided) so C++ can read safely
+                    # -------------------------
+                    use_law = int(bool(getattr(mat, "use_yield_plateau_law", False)))
+
+                    def _get_float(name, default=0.0):
+                        v = getattr(mat, name, None)
+                        return float(default if v is None else v)
+
+                    rLp     = _get_float("rLp", 0.0)
+                    rLm     = _get_float("rLm", 0.0)
+                    delta_y = _get_float("delta_y", 0.0)
+
+                    rSp = _get_float("rSp", 0.0)
+                    rFp = _get_float("rFp", 0.0)
+                    rSm = _get_float("rSm", 0.0)
+                    rFm = _get_float("rFm", 0.0)
+
+                    f.create_dataset(p_ind + '/use_yield_plateau_law', data=np.array([[use_law]], dtype=np.int32))
+                    f.create_dataset(p_ind + '/rLp', data=np.array([[rLp]]))
+                    f.create_dataset(p_ind + '/rLm', data=np.array([[rLm]]))
+                    f.create_dataset(p_ind + '/delta_y', data=np.array([[delta_y]]))
+
+                    # NEW fields for softening/break law
+                    f.create_dataset(p_ind + '/rSp', data=np.array([[rSp]]))
+                    f.create_dataset(p_ind + '/rFp', data=np.array([[rFp]]))
+                    f.create_dataset(p_ind + '/rSm', data=np.array([[rSm]]))
+                    f.create_dataset(p_ind + '/rFm', data=np.array([[rFm]]))
+
+                    # -------------------------
                     # torque info
-                    f.create_dataset(p_ind + '/torque_axis', data= [[particle.torque_axis]])
-                    f.create_dataset(p_ind + '/torque_val', data= [[particle.torque_val]])
+                    # (make sure torque_axis is numeric vector, not a python list object)
+                    # -------------------------
+                    f.create_dataset(p_ind + '/torque_axis', data=np.asarray(particle.torque_axis, dtype=float).reshape(1, -1))
+                    f.create_dataset(p_ind + '/torque_val',  data=np.array([[float(particle.torque_val)]]))
 
+                    # -------------------------
                     # extra properties
-                    f.create_dataset(p_ind + '/movable', data= [[particle.movable]])
-                    f.create_dataset(p_ind + '/breakable', data= [[particle.breakable]])
-                    f.create_dataset(p_ind + '/stoppable', data= [[particle.stoppable]])
+                    # -------------------------
+                    f.create_dataset(p_ind + '/movable',   data=np.array([[int(particle.movable)]], dtype=np.int32))
+                    f.create_dataset(p_ind + '/breakable', data=np.array([[int(particle.breakable)]], dtype=np.int32))
+                    f.create_dataset(p_ind + '/stoppable', data=np.array([[int(particle.stoppable)]], dtype=np.int32))
 
-                    print(j, end = ' ', flush=True)
-                    j = j+1
+                    print(j, end=' ', flush=True)
+                    j += 1
 
             print('\n')
+
 
             # making all scalars a rank-2 data (matrix) to make it compatible with matlab
             # f.create_dataset('total_particles_univ', data=[[j-1]])

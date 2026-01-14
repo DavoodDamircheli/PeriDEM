@@ -1,22 +1,22 @@
 import numpy as np
 
-class Material(object):
-    """docstring for Material"""
-    def __init__(self, delta, rho, snot, cnot, bulk_modulus, E = None, nu = None, Gnot = None, shear_modulus = None, name=None):
-        super(Material, self).__init__()
-        self.delta  = delta
-        self.rho    = rho     
-        self.snot   = snot
-        self.cnot   = cnot
-        self.bulk_modulus = bulk_modulus
-
-        self.E = E
-        self.nu = nu
-        self.Gnot = Gnot
-        self.shear_modulus = shear_modulus
-
-        self.name = name
-
+# class Material(object):
+#     """docstring for Material"""
+#     # def __init__(self, delta, rho, snot, cnot, bulk_modulus, E = None, nu = None, Gnot = None, shear_modulus = None, name=None):
+    #     super(Material, self).__init__()
+    #     self.delta  = delta
+    #     self.rho    = rho     
+    #     self.snot   = snot
+    #     self.cnot   = cnot
+    #     self.bulk_modulus = bulk_modulus
+    #
+    #     self.E = E
+    #     self.nu = nu
+    #     self.Gnot = Gnot
+    #     self.shear_modulus = shear_modulus
+    #
+    #     self.name = name
+    #
     # def generate(self, delta, rho_scale=1, K_scale=1, G_scale=1, Gnot_scale=1):
 
         # if self.name == 'peridem':
@@ -45,6 +45,90 @@ class Material(object):
             # bulk_modulus = E/ (3 * ( 1 - 2 *nu)) 
             # # extra
             # shear_modulus = E/ 2/ (1 + nu)
+# class Material(object):
+#     def __init__(self, delta, rho, snot, s_tension_crit,s_compression_crit,cnot, bulk_modulus,
+#                  E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+#                  # --- NEW (optional) yield/plateau params ---
+#                  rLp=None, rLm=None, delta_y=None, use_yield_plateau_law=False):
+#         super(Material, self).__init__()
+#         self.delta  = delta
+#         self.rho    = rho
+#         self.snot   = snot
+#         self.cnot   = cnot
+#
+#         self.bulk_modulus = bulk_modulus
+#
+#         self.s_tension_crit=s_tension_crit
+#         self.s_compression_crit=s_compression_crit
+#
+#         self.E = E
+#         self.nu = nu
+#         self.Gnot = Gnot
+#         self.shear_modulus = shear_modulus
+#         self.name = name
+#
+#         # --- NEW ---
+#         self.rLp = rLp                  # tension yield stretch
+#         self.rLm = rLm                  # compression yield stretch (positive)
+#         self.delta_y = delta_y          # smoothing for yield->plateau
+#         self.use_yield_plateau_law = use_yield_plateau_law
+#
+
+class Material(object):
+    def __init__(
+        self,
+        delta, rho, snot,
+        s_tension_crit, s_compression_crit,
+        cnot, bulk_modulus,
+        E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+
+        # --- yield/plateau params ---
+        rLp=None, rLm=None, delta_y=None, use_yield_plateau_law=False,
+
+        # --- NEW: softening + break params ---
+        rSp=None, rFp=None,   # tension: softening start / fracture
+        rSm=None, rFm=None,   # compression magnitudes: softening start / fracture
+
+        # --- optional: default ratios for auto-fill ---
+        soft_start_mult=3.0,   # rS = soft_start_mult * rL
+        fracture_mult=6.0,     # rF = fracture_mult   * rL
+        min_gap=0.0            # if you want, set e.g. 5e-6 to enforce separation
+    ):
+        super(Material, self).__init__()
+
+        # base
+        self.delta  = float(delta)
+        self.rho    = float(rho)
+        self.snot   = float(snot)
+        self.cnot   = float(cnot)
+        self.bulk_modulus = float(bulk_modulus)
+
+        self.s_tension_crit = float(s_tension_crit)
+        self.s_compression_crit = float(s_compression_crit)
+
+        self.E = E
+        self.nu = nu
+        self.Gnot = Gnot
+        self.shear_modulus = shear_modulus
+        self.name = name
+
+        # yield/plateau
+        self.rLp = rLp
+        self.rLm = rLm
+        self.delta_y = delta_y
+        self.use_yield_plateau_law = bool(use_yield_plateau_law)
+
+        # softening/break (may be None for now; we may auto-fill below)
+        self.rSp = rSp
+        self.rFp = rFp
+        self.rSm = rSm
+        self.rFm = rFm
+
+        # defaults for auto-fill
+        self.soft_start_mult = float(soft_start_mult)
+        self.fracture_mult = float(fracture_mult)
+        self.min_gap = float(min_gap)
+
 
 
 
@@ -56,8 +140,8 @@ class Material(object):
         print('cnot: ', self.cnot)
         print('snot: ', self.snot)
         print('E: ', self.E)
-             
-
+#              
+#
 def peridem(delta):
     """Generate material properties and peridynamic constants using delta
     """
@@ -371,7 +455,7 @@ def plate_2d(delta, rho_scale=1, K_scale=1, G_scale=1, Gnot_scale=1):
 
 
 
-def ottawa_sand(delta):
+def ottawa_sand_old(delta):
     """
     Return Ottawa sand material properties with peridynamic parameters
     for a given horizon delta (in meters).
@@ -385,17 +469,164 @@ def ottawa_sand(delta):
     # Grain-based elastic constants (quartz)
     rho = 2650.0              # bulk density [kg/m^3]
     nu = 0.17 #or 0.08                # Poisson's ratio
+    
+    #nu = 0.25
     E = 72e9                  # Young's modulus [Pa]
-    K = 37e9                  # Bulk modulus [Pa]
+    #K = 37e9                  # Bulk modulus [Pa]
     G = 31e9                  # Shear modulus [Pa]
     Gnot = 135.0              # Fracture energy [N/m]
-
+    K = E / (3*(1 - 2*nu))
+    # In Bond-Based (3D), nu is fixed at 0.25
+    # Therefore, K = E / (3 * (1 - 2*0.25)) = E / 1.5
+    #K = E / 1.5
     # Peridynamic parameters
-    cnot = 18 * K / (np.pi * delta**4)
-    snot = np.sqrt(5 * Gnot / (9 * K * delta))
+    # cnot = 12 * E / ((1-nu)*np.pi * delta**4)
+    # snot =100* np.sqrt(5 *np.pi* Gnot / (12 * E * delta))
+    #
+    
+    s_tension_crit     = 1*np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    s_compression_crit = 100* np.sqrt(5*np.pi*Gnot / (9*K*delta))
+   
+    cnot               = 18*K / (np.pi * delta**4)    
+    snot               = np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    
 
-        
+    return Material(delta, rho, snot, s_tension_crit, s_compression_crit, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
+def ottawa_sand_old(delta):
+    """
+    Return Ottawa sand material properties with peridynamic parameters
+    for a given horizon delta (in meters).
 
-    return Material(delta, rho, snot, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
+    Parameters
+    ----------
+    delta : float
+        Peridynamic horizon [m]
 
+    """
+    # Grain-based elastic constants (quartz)
+    rho = 2650.0              # bulk density [kg/m^3]
+    #nu = 0.17 #or 0.08                # Poisson's ratio
+    
+    nu = 0.25
+    E = 72e9                  # Young's modulus [Pa]
+    #K = 37e9                  # Bulk modulus [Pa]
+    G = 31e9                  # Shear modulus [Pa]
+    Gnot = 135.0              # Fracture energy [N/m]
+    #K = E / (3*(1 - 2*nu))
+    # In Bond-Based (3D), nu is fixed at 0.25
+    # Therefore, K = E / (3 * (1 - 2*0.25)) = E / 1.5
+    K = E / 1.5
+    # Peridynamic parameters
+    # cnot = 12 * E / ((1-nu)*np.pi * delta**4)
+    # snot =100* np.sqrt(5 *np.pi* Gnot / (12 * E * delta))
+    #
+    cnot = 18*K / (np.pi * delta**4)    
+    #cnot = 9*E
+    snot = np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    # --- NEW yield/plateau parameters ---
+    use_yield_plateau_law =True 
+
+    sigmaLp = 1.0e2   # [Pa] example: tension yield "stress-like" parameter
+    sigmaLm = 1.0e6   # [Pa] example: compression yield parameter (often larger)
+
+    rLp = sigmaLp / cnot
+    rLm = sigmaLm / cnot
+    rSp = 0.0   # tension softening start  (rS^+)
+    rFp = 0.0   # tension fracture stretch (rF^+)
+    rSm = 0.0   # compression softening start magnitude (rS^-)
+    rFm = 0.0   # compression fracture stretch magnitude (rF^-)
+    #------------------------------------------
+    min_gap=5e-6 
+    aS = 3.0
+    aF = 6.0
+    rSp = max(aS * rLp, rLp + min_gap)
+    rFp = max(aF * rLp, rSp + min_gap)
+
+    rSm = max(aS * rLm, rLm + min_gap)
+    rFm = max(aF * rLm, rSm + min_gap)
+    #----------------------------------------
+    delta_y = 0.05 * rLp   # smoothness (5% of tensile yield stretch)
+
+    return Material(delta, rho, snot, cnot, K,
+                    E=E, nu=nu, Gnot=Gnot, shear_modulus=G,
+                    rLp=rLp, rLm=rLm, delta_y=delta_y,
+                    use_yield_plateau_law=use_yield_plateau_law)
+
+
+
+
+
+
+import numpy as np
+
+def ottawa_sand(delta):
+    """
+    Return Ottawa sand material properties with peridynamic parameters
+    for a given horizon delta (in meters).
+
+    Parameters
+    ----------
+    delta : float
+        Peridynamic horizon [m]
+    """
+    # Grain-based elastic constants (quartz)
+    rho = 2650.0              # [kg/m^3]
+    nu  = 0.25                # Bond-Based (3D) fixed
+    E   = 72e9                # [Pa]
+    G   = 31e9                # [Pa]
+    Gnot = 135.0              # [N/m]
+
+    # In Bond-Based (3D), nu=0.25 => K = E / (3*(1-2nu)) = E/1.5
+    K = E / 1.5               # [Pa]
+
+    # Peridynamic parameters (bond-based 3D)
+    cnot = 18.0 * K / (np.pi * delta**4)
+    snot = np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
+
+    # --- Yield/plateau + softening/break law ---
+    use_yield_plateau_law = True
+
+    # "stress-like" calibration parameters (user-chosen)
+    sigmaLp = 1.0e2   # [Pa] tension
+    sigmaLm = 1.0e6   # [Pa] compression
+
+    # Yield stretches
+    rLp = sigmaLp / cnot
+    rLm = sigmaLm / cnot
+
+    # Softening/break suggested from multiples of yield
+    min_gap = 5e-6
+    aS      = 3.0
+    aF      = 6.0
+
+    rSp = max(aS * rLp, rLp + min_gap)   # tension softening start
+    rFp = max(aF * rLp, rSp + min_gap)   # tension fracture
+
+    rSm = max(aS * rLm, rLm + min_gap)   # compression softening start (magnitude)
+    rFm = max(aF * rLm, rSm + min_gap)   # compression fracture (magnitude)
+
+    # Smoothness for yield->plateau transition
+    # (guard against rLp being extremely small)
+    delta_y = max(0.05 * rLp, 1e-12)
+
+    # NOTE: you MUST pass s_tension_crit and s_compression_crit too
+    # If you are using rFp/rFm as the actual break criteria in C++,
+    # you can set these equal to rFp/rFm, or set them large and rely on rF.
+    s_tension_crit = rFp
+    s_compression_crit = rFm
+
+    return Material(
+        delta=delta,
+        rho=rho,
+        snot=snot,
+        s_tension_crit=s_tension_crit,
+        s_compression_crit=s_compression_crit,
+        cnot=cnot,
+        bulk_modulus=K,
+        E=E, nu=nu, Gnot=Gnot, shear_modulus=G,
+        rLp=rLp, rLm=rLm, delta_y=delta_y,
+        rSp=rSp, rFp=rFp, rSm=rSm, rFm=rFm,
+        use_yield_plateau_law=use_yield_plateau_law,
+        name="OttawaSand"
+    )
 

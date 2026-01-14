@@ -6,7 +6,8 @@ using namespace std::chrono;
 
 #include "compat/overloads.h"
 #include "particle/contact.h"
-#include "particle/particle2.h"
+// #include "particle/particle2.h"
+#include "particle/particle3.h"
 #include "particle/timeloop.h"
 #include "read/read_config.h"
 #include "read/rw_hdf5.h"
@@ -109,6 +110,14 @@ public:
   unsigned qs_relax_steps =
       0; // nt: how many dynamic steps to relax after each wall move
 
+  // --- Adaptive quasi-static (gap control) ---
+  bool qs_adaptive = 0;    // 0=off, 1=on
+  double qs_gap_tol = 0.0; // target max gap between material top and wall top
+  double qs_gap_factor =
+      0.0; // target max gap between material top and wall top
+  double qs_max_wall_step =
+      -1; // <=0 means "no cap"; otherwise cap per move step
+
   // forcefield variables
   int forcefield_type;
   double forcefield_scaling;
@@ -202,6 +211,11 @@ public:
     quasi_static = CFGV.quasi_static;
     qs_relax_steps = CFGV.qs_relax_steps;
 
+    qs_adaptive = CFGV.qs_adaptive;
+    qs_gap_tol = CFGV.qs_gap_tol;
+    qs_gap_factor = CFGV.qs_gap_factor;
+    qs_max_wall_step = CFGV.qs_max_wall_step;
+
     if (CFGV.new_snot != (-1)) {
       override_fracture_toughness = 1;
       new_snot = CFGV.new_snot;
@@ -236,6 +250,27 @@ public:
 private:
   /* data */
 };
+
+template <int dim, typename ParticleArray>
+double compute_global_max_height(const ParticleArray &PArr) {
+  double local_max = -1.0e300;
+
+  // height direction: y in 2D, z in 3D
+  constexpr int h = (dim == 2) ? 1 : 2;
+
+  for (unsigned i = 0; i < PArr.size(); ++i) {
+    for (unsigned j = 0; j < PArr[i].nnodes; ++j) {
+      double hj = PArr[i].pos[j](h) + PArr[i].disp[j](h);
+      if (hj > local_max)
+        local_max = hj;
+    }
+  }
+
+  double global_max = local_max;
+  MPI_Allreduce(&local_max, &global_max, 1, MPI_DOUBLE, MPI_MAX,
+                MPI_COMM_WORLD);
+  return global_max;
+}
 
 template <unsigned dim>
 void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
@@ -831,23 +866,6 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
         lrtb[i] = get_minmax<dim>(PArr[i].CurrPos);
       }
     }
-    // std::cout << "Done updating states" << std::endl;
-
-    // wall boundary update
-    // if (dim == 2) {
-    //   Wall.left += Wall.speed_left * TL.dt;
-    //   Wall.right += Wall.speed_right * TL.dt;
-    //   Wall.top += Wall.speed_top * TL.dt;
-    //   Wall.bottom += Wall.speed_bottom * TL.dt;
-    // } else {
-    //   Wall.x_min += Wall.speed_x_min * TL.dt;
-    //   Wall.y_min += Wall.speed_y_min * TL.dt;
-    //   Wall.z_min += Wall.speed_z_min * TL.dt;
-    //   Wall.x_max += Wall.speed_x_max * TL.dt;
-    //   Wall.y_max += Wall.speed_y_max * TL.dt;
-    //   Wall.z_max += Wall.speed_z_max * TL.dt;
-    // }
-
     // if (rank == 0)
     //   std::cout << "this is quasi_static------------->" << TL.quasi_static
     //             << endl;
@@ -882,24 +900,114 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
       bool do_move =
           (cycle > 0) ? (t % cycle == 1) : true; // move at t=1, 1+cycle, ...
 
+      /// if (do_move) {
+      // Move wall ONE increment (same increment you would do in 1 dynamic
+      // timestep)
+      // if (dim == 2) {
+      //   Wall.left += Wall.speed_left * TL.dt;
+      //   Wall.right += Wall.speed_right * TL.dt;
+      //   Wall.top += Wall.speed_top * TL.dt;
+      //   Wall.bottom += Wall.speed_bottom * TL.dt;
+      // } else {
+      //   Wall.x_min += Wall.speed_x_min * TL.dt;
+      //   Wall.y_min += Wall.speed_y_min * TL.dt;
+      //   Wall.z_min += Wall.speed_z_min * TL.dt;
+      //   Wall.x_max += Wall.speed_x_max * TL.dt;
+      //   Wall.y_max += Wall.speed_y_max * TL.dt;
+      //   Wall.z_max += Wall.speed_z_max * TL.dt;
+      // }
+      //}
+      // else: do nothing => wall is frozen while dynamics/damping relax
       if (do_move) {
-        // Move wall ONE increment (same increment you would do in 1 dynamic
-        // timestep)
-        if (dim == 2) {
-          Wall.left += Wall.speed_left * TL.dt;
-          Wall.right += Wall.speed_right * TL.dt;
-          Wall.top += Wall.speed_top * TL.dt;
-          Wall.bottom += Wall.speed_bottom * TL.dt;
+
+        if (!TL.qs_adaptive) {
+
+          if (dim == 2) {
+            Wall.left += Wall.speed_left * TL.dt;
+            Wall.right += Wall.speed_right * TL.dt;
+            Wall.top += Wall.speed_top * TL.dt;
+            Wall.bottom += Wall.speed_bottom * TL.dt;
+          } else {
+            Wall.x_min += Wall.speed_x_min * TL.dt;
+            Wall.y_min += Wall.speed_y_min * TL.dt;
+            Wall.z_min += Wall.speed_z_min * TL.dt;
+            Wall.x_max += Wall.speed_x_max * TL.dt;
+            Wall.y_max += Wall.speed_y_max * TL.dt;
+            Wall.z_max += Wall.speed_z_max * TL.dt;
+          }
+
         } else {
-          Wall.x_min += Wall.speed_x_min * TL.dt;
-          Wall.y_min += Wall.speed_y_min * TL.dt;
-          Wall.z_min += Wall.speed_z_min * TL.dt;
-          Wall.x_max += Wall.speed_x_max * TL.dt;
-          Wall.y_max += Wall.speed_y_max * TL.dt;
-          Wall.z_max += Wall.speed_z_max * TL.dt;
+
+          if (dim == 2) {
+            double max_h =
+                compute_global_max_height<dim>(PArr); // uses y for dim==2
+            double gap = Wall.top - max_h;
+
+            if (rank == 0) {
+              std::cout << "this is the gap=" << t << " max_h=" << max_h
+                        << " gap=" << gap << " z_max=" << Wall.z_max << "\n";
+            }
+
+            if (gap > TL.qs_gap_tol) {
+              Wall.top = max_h + TL.qs_gap_tol;
+            }
+
+          }
+
+          else { // --- adaptive: enforce gap <= qs_gap_tol by moving the TOP
+                 // wall down
+            // ---
+            double max_h = compute_global_max_height<dim>(
+                PArr);                       // global max material height
+            double gap = Wall.z_max - max_h; // positive if wall above material
+
+            // "normal" move from speed (what you'd do in 1 timestep)
+            double z_next = Wall.z_max + Wall.speed_z_max * TL.dt;
+
+            // If gap is too big, pull wall down to hit target gap = tol
+            if (gap > TL.qs_gap_tol) {
+              double z_target =
+                  max_h +
+                  TL.qs_gap_factor * TL.qs_gap_tol; // desired top wall location
+              // move DOWN means z decreases; pick the smaller of z_next and
+              // z_target
+              z_next = std::min(z_next, z_target);
+              // also allow "move more than speed" if speed is too small:
+              // ( if gap > tol, decrease height MORE to make gap tol)
+              z_next = z_target;
+            }
+
+            // optional safety cap on how much the wall can move in one
+            // move-step
+            if (TL.qs_max_wall_step > 0.0) {
+              double dz = z_next - Wall.z_max; // negative for downward move
+              if (dz < -TL.qs_max_wall_step)
+                z_next = Wall.z_max - TL.qs_max_wall_step;
+              if (dz > TL.qs_max_wall_step)
+                z_next = Wall.z_max + TL.qs_max_wall_step;
+            }
+
+            Wall.z_max = z_next;
+            // Wall.z_max = max_h + 0.2 * gap;
+            //  (leave other walls as usual or freeze them, depending on your
+            //  physics) Example: keep x/y walls still, or update them with
+            //  speeds:
+            Wall.x_min += Wall.speed_x_min * TL.dt;
+            Wall.y_min += Wall.speed_y_min * TL.dt;
+            Wall.z_min += Wall.speed_z_min * TL.dt;
+            Wall.x_max += Wall.speed_x_max * TL.dt;
+            Wall.y_max += Wall.speed_y_max * TL.dt;
+
+            bool print_qs = (t == 0) || (t % TL.modulo == 0) ||
+                            ((t - 1) % TL.modulo == 0) ||
+                            ((t + 1) % TL.modulo == 0);
+            if (rank == 0 && print_qs) {
+              std::cout << "[QS adaptive] t=" << t << " max_h=" << max_h
+                        << " gap=" << gap << " z_max=" << Wall.z_max << "\n";
+            }
+          }
         }
       }
-      // else: do nothing => wall is frozen while dynamics/damping relax
     }
 
     // --- user-set knobs (read from config or set before the loop) ---

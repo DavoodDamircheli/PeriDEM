@@ -1,11 +1,12 @@
 #ifndef lOAD_HDF5_H
-#define lOAD_HDF5_H 
+#define lOAD_HDF5_H
 
-#include "read/rw_hdf5.h" 
+#include "read/rw_hdf5.h"
 
-#include "particle/particle2.h"
-#include "particle/contact.h"
 #include "compat/overloads.h"
+#include "particle/contact.h"
+// #include "particle/particle2.h"
+#include "particle/particle3.h"
 
 #include "read/read_config.h"
 
@@ -15,171 +16,204 @@ using namespace std;
 // Compatibility for matlab-generated csv files
 // Edit for vector containing indices
 // Zeros are removed, index starts from 0, not 1
-template <typename ttype>
-void start_from_zero(vector<ttype> &V){
-    unsigned ss = V.size();
-    for (unsigned i = 0; i < ss; ++i) {
-	V[i] -= 1;
-    }
+template <typename ttype> void start_from_zero(vector<ttype> &V) {
+  unsigned ss = V.size();
+  for (unsigned i = 0; i < ss; ++i) {
+    V[i] -= 1;
+  }
 };
 
 // convert connectivity matrix to NbdArr
-auto conn2NArr(vector<Matrix<unsigned, 1, 2>> Conn, unsigned nnodes){
-    vector<vector<unsigned>> NArr;
-    NArr.resize(nnodes);
-    for (unsigned l = 0; l < Conn.size(); l++) {
-        auto i = Conn[l](0);
-        auto j = Conn[l](1);
-	NArr[i].push_back(j);
-	NArr[j].push_back(i);
-    }
-    return NArr;
+auto conn2NArr(vector<Matrix<unsigned, 1, 2>> Conn, unsigned nnodes) {
+  vector<vector<unsigned>> NArr;
+  NArr.resize(nnodes);
+  for (unsigned l = 0; l < Conn.size(); l++) {
+    auto i = Conn[l](0);
+    auto j = Conn[l](1);
+    NArr[i].push_back(j);
+    NArr[j].push_back(i);
+  }
+  return NArr;
 };
 
+template <unsigned dim> vector<ParticleN<dim>> load_particles(ConfigVal CFGV) {
+  string filename = CFGV.setup_filename;
 
-template <unsigned dim>
-vector<ParticleN<dim>> load_particles(ConfigVal CFGV){
-    string filename = CFGV.setup_filename;
+  std::cout << "Reading input setup file: " << filename << std::endl;
+  auto tot_part = load_col<unsigned>(filename, "total_particles_univ");
+  unsigned total_particles_univ = tot_part[0];
 
-    std::cout << "Reading input setup file: " << filename << std::endl;
-    auto tot_part = load_col<unsigned>(filename, "total_particles_univ");
-    unsigned total_particles_univ = tot_part[0];
+  std::cout << "Total particles: " << total_particles_univ << std::endl;
 
-    std::cout << "Total particles: " << total_particles_univ << std::endl;
+  vector<ParticleN<dim>> PArr;
 
-    vector<ParticleN<dim>> PArr;
+  for (unsigned i = 0; i < total_particles_univ; ++i) {
 
+    char buf[20];
+    ////matlab to c++: index increased by 1
+    sprintf(buf, "P_%05u", i);
+    // conver char to string
+    string file_suffix = string(buf);
 
-    for (unsigned i = 0; i < total_particles_univ; ++i) {
-	
-	char buf[20];
-	////matlab to c++: index increased by 1
-	sprintf(buf, "P_%05u", i);
-	// conver char to string
-	string file_suffix = string(buf);
+    auto V = load_rowvecs<double, dim>(filename, file_suffix + "/Pos");
+    unsigned total_nodes = V.size();
 
-	auto V = load_rowvecs<double, dim>(filename, file_suffix+"/Pos");
-	unsigned total_nodes = V.size();
+    ParticleN<dim> P(total_nodes);
+    P.pos = V;
 
-	ParticleN<dim> P(total_nodes);
-	P.pos = V;
+    P.vol = load_col<double>(filename, file_suffix + "/Vol");
+    P.boundary_nodes =
+        load_col<unsigned>(filename, file_suffix + "/bdry_nodes");
 
-	P.vol = load_col<double>(filename, file_suffix+"/Vol");
-	P.boundary_nodes = load_col<unsigned>(filename, file_suffix+"/bdry_nodes");
+    // use load_rank1 to load rank-1 arrays (i.e. vectors). Works for empty
+    // arrays too!
+    P.clamped_nodes =
+        load_rank1<unsigned>(filename, file_suffix + "/clamped_nodes");
 
-	// use load_rank1 to load rank-1 arrays (i.e. vectors). Works for empty arrays too!
-	P.clamped_nodes = load_rank1<unsigned>(filename, file_suffix+"/clamped_nodes");
+    // start_from_zero<unsigned> (P.boundary_nodes);
 
+    P.disp = load_rowvecs<double, dim>(filename, file_suffix + "/disp");
+    // P.disp_old = load_rowvecs<double, dim>(filename,
+    // file_suffix+"/disp_old");
+    P.vel = load_rowvecs<double, dim>(filename, file_suffix + "/vel");
+    P.acc = load_rowvecs<double, dim>(filename, file_suffix + "/acc");
 
-	//start_from_zero<unsigned> (P.boundary_nodes);
+    P.extforce = load_rowvecs<double, dim>(filename, file_suffix + "/extforce");
 
-	P.disp = load_rowvecs<double, dim>(filename, file_suffix+"/disp");
-	//P.disp_old = load_rowvecs<double, dim>(filename, file_suffix+"/disp_old");
-	P.vel = load_rowvecs<double, dim>(filename, file_suffix+"/vel");
-	P.acc = load_rowvecs<double, dim>(filename, file_suffix+"/acc");
+    auto Conn =
+        load_rowvecs<unsigned, 2>(filename, file_suffix + "/Connectivity");
+    P.NbdArr = conn2NArr(Conn, total_nodes);
 
-	P.extforce = load_rowvecs<double, dim>(filename, file_suffix+"/extforce");
+    P.gen_xi();
 
-	
-	auto Conn = load_rowvecs<unsigned, 2>(filename, file_suffix+"/Connectivity");
-	P.NbdArr = conn2NArr(Conn, total_nodes);
+    P.delta = load_col<double>(filename, file_suffix + "/delta")[0];
+    // std::cout << "Now here" << std::endl;
+    P.rho = load_col<double>(filename, file_suffix + "/rho")[0];
+    P.cnot = load_col<double>(filename, file_suffix + "/cnot")[0];
+    P.snot = load_col<double>(filename, file_suffix + "/snot")[0];
+    P.s_tension_crit =
+        load_col<double>(filename, file_suffix + "/s_tension_crit")[0];
+    P.s_compression_crit =
+        load_col<double>(filename, file_suffix + "/s_compression_crit")[0];
 
-	P.gen_xi();
+    //--------------------------------------------------------
+    // --- Optional: yield-plateau constitutive parameters (may not exist in
+    // older setup.h5) ---
+    P.use_yield_plateau_law = false; // default
 
-	P.delta = load_col<double>(filename, file_suffix+"/delta")[0];
-    //std::cout << "Now here" << std::endl;
-	P.rho = load_col<double>(filename, file_suffix+"/rho")[0];
-	P.cnot = load_col<double>(filename, file_suffix+"/cnot")[0];
-	P.snot = load_col<double>(filename, file_suffix+"/snot")[0];
+    try {
 
-	P.movable = load_col<int>(filename, file_suffix+"/movable")[0];
-	P.breakable = load_col<int>(filename, file_suffix+"/breakable")[0];
-	P.stoppable = load_col<int>(filename, file_suffix+"/stoppable")[0];
+      std::cout << "I am here" << endl;
+      P.rLp = load_col<double>(filename, file_suffix + "/rLp")[0];
+      P.rLm = load_col<double>(filename, file_suffix + "/rLm")[0];
 
+      P.rSp = load_col<double>(filename, file_suffix + "/rSp")[0];
+      P.rFp = load_col<double>(filename, file_suffix + "/rFp")[0];
+      P.rSm = load_col<double>(filename, file_suffix + "/rSm")[0];
+      P.rFm = load_col<double>(filename, file_suffix + "/rFm")[0];
 
-	// read anyway, in case want to turn torque on later
-	P.torque_axis = load_col<unsigned>(filename, file_suffix+"/torque_axis")[0];
-	P.torque_val = load_col<double>(filename, file_suffix+"/torque_val")[0];
-	
-	
+      P.delta_y = load_col<double>(filename, file_suffix + "/delta_y")[0];
+      P.use_yield_plateau_law =
+          load_col<int>(filename, file_suffix + "/use_yield_plateau_law")[0] !=
+          0;
+    } catch (...) {
+      // If not found, keep defaults (linear law)
+      P.rSp = 0.0;
+      P.rFp = 0.0;
+      P.rSm = 0.0;
+      P.rFm = 0.0;
 
-
-	PArr.push_back(P);
-
+      P.rLp = 0.0;
+      P.rLm = 0.0;
+      P.delta_y = 0.0;
+      P.use_yield_plateau_law = false;
     }
-    std::cout << "Done reading particles." << std::endl;
 
-    ////return total_shapes;
-    return PArr;
+    //--------------------------------------------------------
+
+    P.movable = load_col<int>(filename, file_suffix + "/movable")[0];
+    P.breakable = load_col<int>(filename, file_suffix + "/breakable")[0];
+    P.stoppable = load_col<int>(filename, file_suffix + "/stoppable")[0];
+
+    // read anyway, in case want to turn torque on later
+    P.torque_axis =
+        load_col<unsigned>(filename, file_suffix + "/torque_axis")[0];
+    P.torque_val = load_col<double>(filename, file_suffix + "/torque_val")[0];
+
+    PArr.push_back(P);
+  }
+  std::cout << "Done reading particles." << std::endl;
+
+  ////return total_shapes;
+  return PArr;
 };
 
-Contact load_contact(ConfigVal CFGV){
-    Contact contact;
-    string filename = CFGV.setup_filename;
+Contact load_contact(ConfigVal CFGV) {
+  Contact contact;
+  string filename = CFGV.setup_filename;
 
-    contact.contact_rad = load_col<double>(filename, "pairwise/contact_radius")[0];
-    contact.normal_stiffness = load_col<double>(filename, "pairwise/normal_stiffness")[0];
-    contact.friction_coefficient = load_col<double>(filename, "pairwise/friction_coefficient")[0];
-    contact.damping_ratio = load_col<double>(filename, "pairwise/damping_ratio")[0];
+  contact.contact_rad =
+      load_col<double>(filename, "pairwise/contact_radius")[0];
+  contact.normal_stiffness =
+      load_col<double>(filename, "pairwise/normal_stiffness")[0];
+  contact.friction_coefficient =
+      load_col<double>(filename, "pairwise/friction_coefficient")[0];
+  contact.damping_ratio =
+      load_col<double>(filename, "pairwise/damping_ratio")[0];
 
-
-    std::cout << "Done reading contact." << std::endl;
-    return contact;
+  std::cout << "Done reading contact." << std::endl;
+  return contact;
 };
 
 //// Make this templated
-//RectWall load_wall(){
-    //string data_loc = "data/hdf5/";
-    //string h5file = "all.h5";
-    //string filename = data_loc + h5file;
+// RectWall load_wall(){
+// string data_loc = "data/hdf5/";
+// string h5file = "all.h5";
+// string filename = data_loc + h5file;
 
-    //auto aw = (bool) load_col<unsigned>(filename, "wall/allow_wall")[0];
-    //RectWall Wall(aw);
-    //auto ci = load_col<double>(filename, "wall/geom_wall_info");
-    //if (ci.size() != 1) {
-	//Wall.left = ci[0];
-	//Wall.right = ci[1];
-	//Wall.top = ci[2];
-	//Wall.bottom = ci[3];
-    //}
-    //std::cout << "Done reading wall size: " << Wall.lrtb() << std::endl;
-    //return Wall;
+// auto aw = (bool) load_col<unsigned>(filename, "wall/allow_wall")[0];
+// RectWall Wall(aw);
+// auto ci = load_col<double>(filename, "wall/geom_wall_info");
+// if (ci.size() != 1) {
+// Wall.left = ci[0];
+// Wall.right = ci[1];
+// Wall.top = ci[2];
+// Wall.bottom = ci[3];
+//}
+// std::cout << "Done reading wall size: " << Wall.lrtb() << std::endl;
+// return Wall;
 //};
 
+template <unsigned dim> RectWall<dim> load_wall(ConfigVal CFGV) {
+  // string data_loc = "data/hdf5/";
+  // string h5file = "all.h5";
+  // string filename = data_loc + h5file;
+  string filename = CFGV.setup_filename;
 
-template <unsigned dim>
-RectWall<dim> load_wall(ConfigVal CFGV){
-    //string data_loc = "data/hdf5/";
-    //string h5file = "all.h5";
-    //string filename = data_loc + h5file;
-    string filename = CFGV.setup_filename;
-
-    auto aw = (bool) load_col<unsigned>(filename, "wall/allow_wall")[0];
-    RectWall<dim> Wall(aw);
-    auto ci = load_col<double>(filename, "wall/geom_wall_info");
-    if (ci.size() != 1) {
-	if (dim == 2) {
-	    Wall.left = ci[0];
-	    Wall.right = ci[1];
-	    Wall.top = ci[2];
-	    Wall.bottom = ci[3];
-	}
-	else if (dim == 3) {
-	    Wall.x_min = ci[0];
-	    Wall.y_min = ci[1];
-	    Wall.z_min = ci[2];
-	    Wall.x_max = ci[3];
-	    Wall.y_max = ci[4];
-	    Wall.z_max = ci[5];
-	}
-	else{
-	    std::cout << "hdf data geom_wall_info length is not 4 or 6. " << std::endl;
-	}
+  auto aw = (bool)load_col<unsigned>(filename, "wall/allow_wall")[0];
+  RectWall<dim> Wall(aw);
+  auto ci = load_col<double>(filename, "wall/geom_wall_info");
+  if (ci.size() != 1) {
+    if (dim == 2) {
+      Wall.left = ci[0];
+      Wall.right = ci[1];
+      Wall.top = ci[2];
+      Wall.bottom = ci[3];
+    } else if (dim == 3) {
+      Wall.x_min = ci[0];
+      Wall.y_min = ci[1];
+      Wall.z_min = ci[2];
+      Wall.x_max = ci[3];
+      Wall.y_max = ci[4];
+      Wall.z_max = ci[5];
+    } else {
+      std::cout << "hdf data geom_wall_info length is not 4 or 6. "
+                << std::endl;
     }
-    //std::cout << "Done reading wall size: " << Wall.lrtb() << std::endl;
-    std::cout << "Done reading wall size." << std::endl;
-    return Wall;
+  }
+  // std::cout << "Done reading wall size: " << Wall.lrtb() << std::endl;
+  std::cout << "Done reading wall size." << std::endl;
+  return Wall;
 };
-
 
 #endif /* ifndef lOAD_HDF5_H */
