@@ -74,61 +74,173 @@ import numpy as np
 #         self.use_yield_plateau_law = use_yield_plateau_law
 #
 
-class Material(object):
-    def __init__(
-        self,
-        delta, rho, snot,
-        s_tension_crit, s_compression_crit,
-        cnot, bulk_modulus,
-        E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+# class Material(object):
+#     def __init__(
+#         self,
+#         delta, rho, snot,
+#         s_tension_crit, s_compression_crit,
+#         cnot, bulk_modulus,
+#         E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+#
+#         # --- yield/plateau params ---
+#         rLp=None, rLm=None, delta_y=None, use_yield_plateau_law=False,
+#
+#         # --- NEW: softening + break params ---
+#         rSp=None, rFp=None,   # tension: softening start / fracture
+#         rSm=None, rFm=None,   # compression magnitudes: softening start / fracture
+#
+#         # --- optional: default ratios for auto-fill ---
+#         soft_start_mult=3.0,   # rS = soft_start_mult * rL
+#         fracture_mult=6.0,     # rF = fracture_mult   * rL
+#         min_gap=0.0            # if you want, set e.g. 5e-6 to enforce separation
+#     ):
+#         super(Material, self).__init__()
+#
+#         # base
+#         self.delta  = float(delta)
+#         self.rho    = float(rho)
+#         self.snot   = float(snot)
+#         self.cnot   = float(cnot)
+#         self.bulk_modulus = float(bulk_modulus)
+#
+#         self.s_tension_crit = float(s_tension_crit)
+#         self.s_compression_crit = float(s_compression_crit)
+#
+#         self.E = E
+#         self.nu = nu
+#         self.Gnot = Gnot
+#         self.shear_modulus = shear_modulus
+#         self.name = name
+#
+#         # yield/plateau
+#         self.rLp = rLp
+#         self.rLm = rLm
+#         self.delta_y = delta_y
+#         self.use_yield_plateau_law = bool(use_yield_plateau_law)
+#
+#         # softening/break (may be None for now; we may auto-fill below)
+#         self.rSp = rSp
+#         self.rFp = rFp
+#         self.rSm = rSm
+#         self.rFm = rFm
+#
+#         # defaults for auto-fill
+#         self.soft_start_mult = float(soft_start_mult)
+#         self.fracture_mult = float(fracture_mult)
+#         self.min_gap = float(min_gap)
+#
 
-        # --- yield/plateau params ---
-        rLp=None, rLm=None, delta_y=None, use_yield_plateau_law=False,
 
-        # --- NEW: softening + break params ---
-        rSp=None, rFp=None,   # tension: softening start / fracture
-        rSm=None, rFm=None,   # compression magnitudes: softening start / fracture
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from tenstion_compresson_ottwa_consti_v3 import f_redesigned_vec
 
-        # --- optional: default ratios for auto-fill ---
-        soft_start_mult=3.0,   # rS = soft_start_mult * rL
-        fracture_mult=6.0,     # rF = fracture_mult   * rL
-        min_gap=0.0            # if you want, set e.g. 5e-6 to enforce separation
-    ):
-        super(Material, self).__init__()
+# import the functions from your attached script
+# from constitutive_laws import f_redesigned_vec, plot_constitutive_law
+# (or paste them directly above the class)
 
-        # base
-        self.delta  = float(delta)
-        self.rho    = float(rho)
-        self.snot   = float(snot)
-        self.cnot   = float(cnot)
-        self.bulk_modulus = float(bulk_modulus)
-
-        self.s_tension_crit = float(s_tension_crit)
-        self.s_compression_crit = float(s_compression_crit)
-
+class Material:
+    def __init__(self, *, delta, rho, snot, cnot, bulk_modulus,
+                 E=None, nu=None, Gnot=None, shear_modulus=None, name=None,
+                 # law params (optional)
+                 rLp=None, rLm=None, delta_y=None,
+                 rSp=None, rFp=None, rSm=None, rFm=None,
+                 use_yield_plateau_law=False,
+                 s_tension_crit=None, s_compression_crit=None):
+        self.delta = delta
+        self.rho = rho
+        self.snot = snot
+        self.cnot = cnot
+        self.bulk_modulus = bulk_modulus
         self.E = E
         self.nu = nu
         self.Gnot = Gnot
         self.shear_modulus = shear_modulus
         self.name = name
 
-        # yield/plateau
+        # store law params
+        self.use_yield_plateau_law = use_yield_plateau_law
         self.rLp = rLp
         self.rLm = rLm
         self.delta_y = delta_y
-        self.use_yield_plateau_law = bool(use_yield_plateau_law)
-
-        # softening/break (may be None for now; we may auto-fill below)
         self.rSp = rSp
         self.rFp = rFp
         self.rSm = rSm
         self.rFm = rFm
 
-        # defaults for auto-fill
-        self.soft_start_mult = float(soft_start_mult)
-        self.fracture_mult = float(fracture_mult)
-        self.min_gap = float(min_gap)
+        self.s_tension_crit = s_tension_crit
+        self.s_compression_crit = s_compression_crit
 
+    def constitutive_params(self):
+        """Return dict in the format your plotting code expects."""
+        if not self.use_yield_plateau_law:
+            raise ValueError("use_yield_plateau_law is False; no redesigned law to plot.")
+
+        # IMPORTANT: in your plotting file, compression parameters are given as positive magnitudes
+        # and the plot uses -rL_neg, -rS_neg, -rF_neg for markers.
+        return dict(
+            mu=float(self.cnot),
+            delta=float(self.delta_y),
+
+            rL_pos=float(self.rLp), rS_pos=float(self.rSp), rF_pos=float(self.rFp),
+            rL_neg=float(self.rLm), rS_neg=float(self.rSm), rF_neg=float(self.rFm),
+        )
+    
+
+
+    def plot_constitutive_law(self, *, rmin=None, rmax=None, npts=1200,
+                             show=True, savepath=None, dpi=200):
+        """
+        Plot (and optionally save) the constitutive law using your existing script logic.
+        """
+        p = self.constitutive_params()
+
+        # auto domain like your script
+        if rmin is None:
+            rmin = -1.15 * p["rF_neg"]
+        if rmax is None:
+            rmax =  1.15 * p["rF_pos"]
+
+        r = np.linspace(rmin, rmax, npts)
+        f = f_redesigned_vec(r, **p)  # from your attached script
+
+        plt.figure(figsize=(9, 5))
+        plt.plot(r, f, "k", lw=2.2, label=r"$f(r)$")
+
+        # markers (same as your script)
+        plt.axvline(p["rL_pos"], linestyle="--", lw=1.6, label=r"$r_L^+$ (yield)")
+        plt.axvline(p["rS_pos"], linestyle=":",  lw=1.6, label=r"$r_S^+$ (softening)")
+        plt.axvline(p["rF_pos"], linestyle="-.", lw=1.6, label=r"$r_F^+$ (fracture)")
+
+        plt.axvline(-p["rL_neg"], linestyle="--", lw=1.6, label=r"$-r_L^-$ (yield)")
+        plt.axvline(-p["rS_neg"], linestyle=":",  lw=1.6, label=r"$-r_S^-$ (softening)")
+        plt.axvline(-p["rF_neg"], linestyle="-.", lw=1.6, label=r"$-r_F^-$ (fracture)")
+
+        plt.axhline(0, color="gray", lw=0.8)
+        plt.axvline(0, color="gray", lw=0.8)
+        plt.grid(True, alpha=0.3)
+
+        title = self.name or "Material"
+        plt.title(f"Constitutive law: {title}")
+        plt.xlabel("stretch $r$")
+        plt.ylabel("force $f(r)$")
+
+        # unique legend entries
+        handles, labels = plt.gca().get_legend_handles_labels()
+        uniq = dict(zip(labels, handles))
+        plt.legend(uniq.values(), uniq.keys(), fontsize=9, loc="upper left")
+
+        plt.tight_layout()
+
+        if savepath is not None:
+            os.makedirs(os.path.dirname(savepath) or ".", exist_ok=True)
+            plt.savefig(savepath, dpi=dpi)
+
+        if show:
+            plt.show()
+        else:
+            plt.close()
 
 
 
@@ -455,7 +567,7 @@ def plate_2d(delta, rho_scale=1, K_scale=1, G_scale=1, Gnot_scale=1):
 
 
 
-def ottawa_sand_old(delta):
+def ottawa_sand_old2(delta):
     """
     Return Ottawa sand material properties with peridynamic parameters
     for a given horizon delta (in meters).
@@ -468,9 +580,9 @@ def ottawa_sand_old(delta):
     """
     # Grain-based elastic constants (quartz)
     rho = 2650.0              # bulk density [kg/m^3]
-    nu = 0.17 #or 0.08                # Poisson's ratio
+    #nu = 0.17 #or 0.08                # Poisson's ratio
     
-    #nu = 0.25
+    nu = 0.25
     E = 72e9                  # Young's modulus [Pa]
     #K = 37e9                  # Bulk modulus [Pa]
     G = 31e9                  # Shear modulus [Pa]
@@ -491,7 +603,21 @@ def ottawa_sand_old(delta):
     snot               = np.sqrt(5*np.pi*Gnot / (9*K*delta))
     
 
-    return Material(delta, rho, snot, s_tension_crit, s_compression_crit, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
+    #return Material(delta, rho, snot, s_tension_crit, s_compression_crit, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
+    return Material(
+    delta=delta,
+    rho=rho,
+    snot=snot,
+    s_tension_crit=s_tension_crit,
+    s_compression_crit=s_compression_crit,
+    cnot=cnot,
+    bulk_modulus=K,
+    E=E,
+    nu=nu,
+    Gnot=Gnot,
+    shear_modulus=G
+)
+
 def ottawa_sand_old(delta):
     """
     Return Ottawa sand material properties with peridynamic parameters
@@ -559,7 +685,7 @@ def ottawa_sand_old(delta):
 
 import numpy as np
 
-def ottawa_sand(delta):
+def ottawa_sand(delta,plot=False, plot_path=None):
     """
     Return Ottawa sand material properties with peridynamic parameters
     for a given horizon delta (in meters).
@@ -584,18 +710,18 @@ def ottawa_sand(delta):
     snot = np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
 
     # --- Yield/plateau + softening/break law ---
-    use_yield_plateau_law = True
+    use_yield_plateau_law = True 
 
     # "stress-like" calibration parameters (user-chosen)
     sigmaLp = 1.0e2   # [Pa] tension
-    sigmaLm = 1.0e6   # [Pa] compression
+    sigmaLm = 1.0e4   # [Pa] compression
 
     # Yield stretches
     rLp = sigmaLp / cnot
     rLm = sigmaLm / cnot
 
     # Softening/break suggested from multiples of yield
-    min_gap = 5e-6
+    min_gap = 3*rLp 
     aS      = 3.0
     aF      = 6.0
 
@@ -608,14 +734,21 @@ def ottawa_sand(delta):
     # Smoothness for yield->plateau transition
     # (guard against rLp being extremely small)
     delta_y = max(0.05 * rLp, 1e-12)
-
+    
     # NOTE: you MUST pass s_tension_crit and s_compression_crit too
     # If you are using rFp/rFm as the actual break criteria in C++,
     # you can set these equal to rFp/rFm, or set them large and rely on rF.
     s_tension_crit = rFp
     s_compression_crit = rFm
-
-    return Material(
+    print('cnot',cnot)
+    print('snot',snot)
+    print('rLp',rLp)
+    print('rLm',rLm)
+    print(' rSp',rSp)
+    print(' rSm',rSm)
+    print(' rFp',rFp)
+    print('rFp',rFp)
+    mat =  Material(
         delta=delta,
         rho=rho,
         snot=snot,
@@ -629,4 +762,7 @@ def ottawa_sand(delta):
         use_yield_plateau_law=use_yield_plateau_law,
         name="OttawaSand"
     )
+    if plot and mat.use_yield_plateau_law:
+        mat.plot_constitutive_law(savepath=plot_path, show=(plot_path is None))
 
+    return mat
