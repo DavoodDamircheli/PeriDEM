@@ -243,15 +243,56 @@ class Material:
             plt.close()
 
 
-
     def print(self):
-        """print info
-        """
-        print('delta: ', self.delta)
-        print('rho: ', self.rho)
-        print('cnot: ', self.cnot)
-        print('snot: ', self.snot)
-        print('E: ', self.E)
+        """Print material properties"""
+        print("=== Material properties ===")
+        print(f"delta: {self.delta}")
+        print(f"rho:   {self.rho}")
+
+        if hasattr(self, "cnot"):
+            print(f"cnot:  {self.cnot}")
+
+        if hasattr(self, "snot"):
+            print(f"snot:  {self.snot}")
+
+        if hasattr(self, "E") and self.E is not None:
+            print(f"E:     {self.E}")
+        
+        if hasattr(self, "nu") and self.E is not None:
+            print(f"nu:     {self.nu}")
+
+
+        # ----------------------------------
+        # Tension / compression criteria
+        # ----------------------------------
+        if hasattr(self, "s_tension_crit"):
+            print(f"s_tension_crit:     {self.s_tension_crit}")
+
+        if hasattr(self, "s_compression_crit"):
+            print(f"s_compression_crit: {self.s_compression_crit}")
+
+        # ----------------------------------
+        # Ratio-based parameters (if exist)
+        # ----------------------------------
+        for name in ["rLp", "rLm", "rSp", "rFp", "rSm", "rFm"]:
+            if hasattr(self, name):
+                print(f"{name}: {getattr(self, name)}")
+
+        # ----------------------------------
+        # Softening / fracture tuning params
+        # ----------------------------------
+        for name in ["min_gap", "aS", "aF"]:
+            if hasattr(self, name):
+                print(f"{name}: {getattr(self, name)}")
+
+    # def print(self):
+    #     """print info
+    #     """
+    #     print('delta: ', self.delta)
+    #     print('rho: ', self.rho)
+    #     print('cnot: ', self.cnot)
+    #     print('snot: ', self.snot)
+    #     print('E: ', self.E)
 #              
 #
 def peridem(delta):
@@ -582,7 +623,7 @@ def ottawa_sand_old2(delta):
     rho = 2650.0              # bulk density [kg/m^3]
     #nu = 0.17 #or 0.08                # Poisson's ratio
     
-    nu = 0.25
+    #nu = 0.25
     E = 72e9                  # Young's modulus [Pa]
     #K = 37e9                  # Bulk modulus [Pa]
     G = 31e9                  # Shear modulus [Pa]
@@ -597,12 +638,14 @@ def ottawa_sand_old2(delta):
     #
     
     s_tension_crit     = 1*np.sqrt(5*np.pi*Gnot / (9*K*delta))
-    s_compression_crit = 100* np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    #s_tension_crit     =1 
+    s_compression_crit = 1* np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    #s_compression_crit = 100
    
     cnot               = 18*K / (np.pi * delta**4)    
     snot               = np.sqrt(5*np.pi*Gnot / (9*K*delta))
     
-
+    print(" we are using this")
     #return Material(delta, rho, snot, s_tension_crit, s_compression_crit, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
     return Material(
     delta=delta,
