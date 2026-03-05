@@ -257,7 +257,10 @@ class Material:
 
         if hasattr(self, "E") and self.E is not None:
             print(f"E:     {self.E}")
+        if hasattr(self, "K") and self.E is not None:
+            print(f"K:     {self.K}")
         
+
         if hasattr(self, "nu") and self.E is not None:
             print(f"nu:     {self.nu}")
 
@@ -621,29 +624,39 @@ def ottawa_sand_old2(delta):
     """
     # Grain-based elastic constants (quartz)
     rho = 2650.0              # bulk density [kg/m^3]
-    #nu = 0.17 #or 0.08                # Poisson's ratio
+    nu = 0.25 #or 0.08                # Poisson's ratio
     
     #nu = 0.25
-    E = 72e9                  # Young's modulus [Pa]
-    #K = 37e9                  # Bulk modulus [Pa]
-    G = 31e9                  # Shear modulus [Pa]
-    Gnot = 135.0              # Fracture energy [N/m]
+    E = 95.0e9                  # Young's modulus [Pa]
+    K = 37e9                  # Bulk modulus [Pa]
+    G = 44e9                  # Shear modulus [Pa]
+    Gnot = 1.5              # Fracture energy [N/m]
     K = E / (3*(1 - 2*nu))
     # In Bond-Based (3D), nu is fixed at 0.25
     # Therefore, K = E / (3 * (1 - 2*0.25)) = E / 1.5
     #K = E / 1.5
     # Peridynamic parameters
-    # cnot = 12 * E / ((1-nu)*np.pi * delta**4)
+    #cnot = 120 * E / ((1-nu)*np.pi * delta**4)
     # snot =100* np.sqrt(5 *np.pi* Gnot / (12 * E * delta))
     #
+        #-------------paper------c0-----2
+    cnot = 12.0 * E / (np.pi * delta**4 * (1.0 - 2.0*nu))
     
-    s_tension_crit     = 1*np.sqrt(5*np.pi*Gnot / (9*K*delta))
+
+    #-------------paper------c0-----1
+    #cnot = 12.0 * E / (np.pi * delta**4 * (1.0 - nu))
+    print("k is ",K)
+    # Critical bond strain (baseline)
+    #snot = np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
+ 
+    s_tension_crit     = (1e0)*np.sqrt(5*np.pi*Gnot / (9*K*delta))
     #s_tension_crit     =1 
-    s_compression_crit = 1* np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    s_compression_crit = -(1e0)* np.sqrt(5*np.pi*Gnot / (9*K*delta))
     #s_compression_crit = 100
    
-    cnot               = 18*K / (np.pi * delta**4)    
-    snot               = np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    #cnot               = (2)*18*K / (np.pi * delta**4)    
+    #snot               = np.sqrt(5*np.pi*Gnot / (9*K*delta))
+    snot               = s_tension_crit 
     
     print(" we are using this")
     #return Material(delta, rho, snot, s_tension_crit, s_compression_crit, cnot, K, E = E, nu = nu, Gnot = Gnot, shear_modulus = G )
@@ -726,7 +739,6 @@ def ottawa_sand_old(delta):
 
 
 
-import numpy as np
 
 def ottawa_sand(delta,plot=False, plot_path=None):
     """
@@ -740,14 +752,15 @@ def ottawa_sand(delta,plot=False, plot_path=None):
     """
     # Grain-based elastic constants (quartz)
     rho = 2650.0              # [kg/m^3]
-    nu  = 0.25                # Bond-Based (3D) fixed
+    nu  = 0.17                # Bond-Based (3D) fixed
     E   = 72e9                # [Pa]
     G   = 31e9                # [Pa]
     Gnot = 135.0              # [N/m]
 
     # In Bond-Based (3D), nu=0.25 => K = E / (3*(1-2nu)) = E/1.5
-    K = E / 1.5               # [Pa]
+    #K = E / 1.5               # [Pa]
 
+    K = E / (3*(1 - 2*nu))
     # Peridynamic parameters (bond-based 3D)
     cnot = 18.0 * K / (np.pi * delta**4)
     snot = np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
@@ -760,11 +773,14 @@ def ottawa_sand(delta,plot=False, plot_path=None):
     sigmaLm = 1.0e4   # [Pa] compression
 
     # Yield stretches
-    rLp = sigmaLp / cnot
-    rLm = sigmaLm / cnot
+    # rLp = sigmaLp /E 
+    # rLm = sigmaLm /E 
+    rLp = 10*sigmaLp/cnot  
+    rLm = sigmaLm /cnot 
+
 
     # Softening/break suggested from multiples of yield
-    min_gap = 3*rLp 
+    min_gap = 2*rLp 
     aS      = 3.0
     aF      = 6.0
 
@@ -805,7 +821,165 @@ def ottawa_sand(delta,plot=False, plot_path=None):
         use_yield_plateau_law=use_yield_plateau_law,
         name="OttawaSand"
     )
+    plot = 1 
     if plot and mat.use_yield_plateau_law:
         mat.plot_constitutive_law(savepath=plot_path, show=(plot_path is None))
 
     return mat
+
+
+#-----------------------------------------------------------------------
+
+def ottawa_sand_1(delta):
+    """
+    Return material properties for peridynamic compression
+    of a sphere by rigid plates, based on the reference example.
+
+    Parameters
+    ----------
+    delta : float
+        Peridynamic horizon [m]
+    """
+    """
+    Minimum Index Density: ~1,480 kg/m³ (emax≈0.74)
+
+    Maximum Index Density: ~1,760 kg/m³ (emin≈0.50)
+
+    Typical Bulk Density: Often cited around 1,550 to 1,650 kg/m³ for medium-dense samples.
+    Typical Values for Elastic Modulus (E)
+
+    For standard geotechnical applications at moderate depths (confining pressure around 100 kPa), you can expect the following ranges:
+
+    Loose State: 30 MPa to 50 MPa
+
+    Medium Dense: 50 MPa to 80 MPa
+
+    Dense State: 80 MPa to 120+ MPa
+    """
+
+    # -------------------------------
+    # Material properties (elastic)
+    # -------------------------------
+
+    rho = 2650.0              # density [kg/m^3] (quartz-like)
+    nu  = 0.25                # Poisson's ratio
+    #E = 95.0e9                # bulk modulus [Pa]
+    E = 75.0e9                # bulk modulus [Pa]
+    #E=2*E 
+    G = 44.0e9     # shear modulus [Pa]
+    print("E is ", E)
+    # -------------------------------
+    # Fracture / damage parameters
+    # -------------------------------
+    #K = 37.0e9
+    K = E / (3*(1 - 2*nu))
+    Gnot = 1.0              # fracture energy [N/m] (kept consistent)
+    # -------------------------------
+    # Peridynamic parameters
+    #-------------paper------c0-----2
+    cnot = 12.0 * E / (np.pi * delta**4 * (1.0 - 2.0*nu))
+    #-------------paper------c0-----1
+    #cnot = 12.0 * E / (np.pi * delta**4 * (1.0 - nu))
+    # Critical bond strain (baseline)
+    snot =(1e-9)* np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
+    #snot = 0.007 
+    # Asymmetric tension / compression limits
+    s_tension_crit      =  snot
+    s_compression_crit  =  snot
+
+
+    return Material(
+        delta=delta,
+        rho=rho,
+        snot=snot,
+        s_tension_crit=s_tension_crit,
+        s_compression_crit=s_compression_crit,
+        cnot=cnot,
+        bulk_modulus=K,
+        E=E,
+        nu=nu,
+        Gnot=Gnot,
+        shear_modulus=G
+    )
+
+
+#-----------------------------------------------------------------------
+
+
+
+
+
+def sphere_contact_material(delta):
+    """
+    Return material properties for peridynamic compression
+    of a sphere by rigid plates, based on the reference example.
+
+    Parameters
+    ----------
+    delta : float
+        Peridynamic horizon [m]
+    """
+
+    import numpy as np
+
+    # -------------------------------
+    # Material properties (elastic)
+    # -------------------------------
+
+    rho = 2650.0              # density [kg/m^3] (quartz-like)
+    nu  = 0.25                # Poisson's ratio
+
+    k = 12.5e9                # bulk modulus [Pa]
+    E = 3.0 * (1.0 - 2.0*nu) * k   # Young's modulus [Pa]
+
+    G = E / (2.0 * (1.0 + nu))     # shear modulus [Pa]
+    print("E is ", E)
+    # -------------------------------
+    # Fracture / damage parameters
+    # -------------------------------
+
+    Gnot = 135.0              # fracture energy [N/m] (kept consistent)
+
+    # -------------------------------
+    # Peridynamic parameters
+    # -------------------------------
+
+    # Bulk modulus (explicit, for clarity)
+    K = k
+    #E = 2*E
+    K = E / (3*(1 - 2*nu))
+     
+    # Bond stiffness
+    #cnot = 18.0 * K / (np.pi * delta**4)
+    
+    
+    #-------------paper------c0-----2
+    cnot =3* 12.0 * E / (np.pi * delta**4 * (1.0 - 2.0*nu))
+    
+
+    #-------------paper------c0-----1
+    #cnot = 12.0 * E / (np.pi * delta**4 * (1.0 - nu))
+    print("k is ",K)
+    # Critical bond strain (baseline)
+    snot = np.sqrt(5.0 * np.pi * Gnot / (9.0 * K * delta))
+    snot = 0.06
+    # Asymmetric tension / compression limits
+    s_tension_crit      =  snot
+    s_compression_crit  =  snot
+
+    print("Using sphere contact material (k = 12.5 GPa, nu = 0.35)")
+
+    return Material(
+        delta=delta,
+        rho=rho,
+        snot=snot,
+        s_tension_crit=s_tension_crit,
+        s_compression_crit=s_compression_crit,
+        cnot=cnot,
+        bulk_modulus=K,
+        E=E,
+        nu=nu,
+        Gnot=Gnot,
+        shear_modulus=G
+    )
+

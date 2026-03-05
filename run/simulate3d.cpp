@@ -207,7 +207,12 @@ int main(int argc, char *argv[]) {
   // more compact code but much slower
   // run_timeloop_compact<dim> (PArr, TL, CN, Wall);
   auto stop = system_clock::now();
+  //---------------Debug-----------------
 
+  MPI_Barrier(MPI_COMM_WORLD);
+  std::cout.flush(); // or cerr
+  MPI_Barrier(MPI_COMM_WORLD);
+  //---------------Debug-----------------
   // Close MPI
   MPI_Finalize();
 

@@ -351,7 +351,7 @@ def genplot(t):
     plt.savefig(out_png, dpi=300, bbox_inches='tight')
     
     
-    plt.close()
+    #plt.close()
 
 if args.serial:
     ## serial j

@@ -191,7 +191,6 @@ public:
     } else {
       counter = 1;
       first_counter = counter;
-      last_counter = timesteps / modulo;
     }
   };
 
@@ -631,6 +630,9 @@ void run_timeloop(vector<ParticleN<dim>> &PArr, Timeloop TL, Contact CN,
          i += numprocessors) { // mpi loop
       if (PArr[i].movable) {
         auto temp_ft_i = PArr[i].get_peridynamic_force();
+        // if (rank == 0) {
+        //   std::cerr << "periDynamic------------> " << temp_ft_i << "\n";
+        // }
         for (unsigned node = 0; node < PArr[i].nnodes; node++) {
           giant_f[node + giant_index[i]] += temp_ft_i[node];
         }
