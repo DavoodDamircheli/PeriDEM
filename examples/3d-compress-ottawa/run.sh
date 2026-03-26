@@ -22,7 +22,7 @@ count=$(ls -1 "$base" 2>/dev/null | grep -E '^run[0-9]+' | sed 's/^run\([0-9]\+\
 count=$((count+1))
 
 run_name="run${count}-qs"
-dir="$base/sphere_ottawa_S0_e-9_24"
+dir="$base/sphere_ottawa-31"
 #-------------------------------------------------
 # create subdirectory
 

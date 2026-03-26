@@ -81,7 +81,7 @@ print('shifts', shifts)
 margin=0.1
 x_min = -L
 y_min = -Ly
-z_min = -Lz 
+z_min = -Lz+0* contact_radius 
 
 x_max = L
 y_max = Ly
