@@ -138,8 +138,7 @@ public:
         double scalar_force = 0.0;
 
         if (!use_yield_plateau_law) {
-          std::cout << "we are using linear" << std::endl;
-          // current behavior (linear)
+          //  current behavior (linear)
           scalar_force = cnot * str;
         } else {
           // new yield-plateau behavior (different rLp/rLm, slope -> 0 after
@@ -240,19 +239,18 @@ public:
   //--------------------------------------------------------------------
   //--------------------------------------------------------------------
 
-  // breaks if:  (tension)     s >  s1not
-  //         or: (compression) s < -s2not
   void remove_bonds() {
     if (!break_bonds)
       return;
 
     for (unsigned i = 0; i < nnodes; ++i) {
 
+      auto j = stretch[i].begin();
       auto j_NbdArr = NbdArr[i].begin();
       auto j_xi = xi[i].begin();
       auto j_xi_norm = xi_norm[i].begin();
 
-      for (auto j = stretch[i].begin(); j != stretch[i].end(); ++j) {
+      while (j != stretch[i].end()) {
 
         const double s = *j;
 
@@ -260,35 +258,25 @@ public:
         const bool break_compression = (s < -s_compression_crit);
 
         if (break_tension || break_compression) {
-
-          // erase current entries in all "parallel" arrays
           j = stretch[i].erase(j);
           j_NbdArr = NbdArr[i].erase(j_NbdArr);
           j_xi = xi[i].erase(j_xi);
           j_xi_norm = xi_norm[i].erase(j_xi_norm);
 
           --total_neighbors[i];
-
-          // erase returns iterator to "next" element, but your for-loop will
-          // ++j, so step back one position (only if not at begin).
-          if (j != stretch[i].begin()) {
-            --j;
-            --j_NbdArr;
-            --j_xi;
-            --j_xi_norm;
-          } else {
-            // if we erased the first element, we should also back up the
-            // parallel iterators consistently by not decrementing.
-            // (loop will continue correctly)
-          }
+        } else {
+          ++j;
+          ++j_NbdArr;
+          ++j_xi;
+          ++j_xi_norm;
         }
-
-        ++j_NbdArr;
-        ++j_xi;
-        ++j_xi_norm;
       }
     }
   }
+
+  //--------------------------------------------------------------------
+  //--------------------------------------------------------------------
+  //--------------------------------------------------------------------
 
   // Populate xi related information for the neighbors
   void gen_xi() {
